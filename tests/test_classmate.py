@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import wave
 from urllib.parse import parse_qs, urlparse
 
@@ -18,6 +19,9 @@ from classmate.config import Settings, load_settings
 from classmate.context import TranscriptBuffer, load_notes
 from classmate.llm import build_prompt
 from classmate.questions import find_question, question_score
+from classmate import license as licensing
+
+REAL_LICENSE_LOAD = licensing.load
 
 
 @pytest.fixture(autouse=True)
@@ -33,6 +37,8 @@ def isolated_config(tmp_path, monkeypatch):
     monkeypatch.chdir(home)
     for env in set(Settings.API_ENV.values()):
         monkeypatch.delenv(env, raising=False)
+    from classmate import license as licensing     # most tests run as an authorized user
+    monkeypatch.setattr(licensing, "load", lambda now=None: licensing.License("user", None, "test"))
 
 
 # ---------------- question detection ----------------
@@ -1026,3 +1032,86 @@ def test_append_key_default_and_matching():
             self.char, self.vk = char, vk
     kb = type("Keyboard", (), {"Key": Key, "KeyCode": KeyCode})
     assert Shortcut(kb, "`").pressed(KeyCode("·", 50), set())           # Chinese input method types ·
+
+
+# ---------------- authorization codes ----------------
+@pytest.fixture
+def test_keys(monkeypatch):
+    """A throwaway signing key instead of the owner's (whose master code is never in the repo)."""
+    import base64
+    from cryptography.hazmat.primitives import serialization as ser
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    key = Ed25519PrivateKey.generate()
+    pub = key.public_key().public_bytes(ser.Encoding.Raw, ser.PublicFormat.Raw)
+    monkeypatch.setattr(licensing, "PUBLIC_KEY", base64.b64encode(pub).decode())
+    monkeypatch.setattr(licensing, "load", REAL_LICENSE_LOAD)
+    seed = key.private_bytes(ser.Encoding.Raw, ser.PrivateFormat.Raw, ser.NoEncryption())
+    return "CM-MASTER-" + base64.b32encode(seed).decode().rstrip("=")
+
+
+def test_master_code_issues_expiring_codes(test_keys):
+    master = licensing.parse(test_keys.lower())                 # case and spaces do not matter
+    assert master.kind == "master" and master.expires is None and master.can_issue
+    now = 1_800_000_000
+    code = licensing.issue(master, 7, now=now)
+    user = licensing.parse(code, now=now + 6 * 86400)
+    assert user.kind == "user" and not user.can_issue and user.expires == now + 7 * 86400
+    with pytest.raises(ValueError, match="过期"):
+        licensing.parse(code, now=now + 8 * 86400)
+    with pytest.raises(PermissionError):
+        licensing.issue(user, 7)                                 # issued codes cannot issue codes
+    tampered = code[:-3] + ("AAA" if code[-3:] != "AAA" else "BBB")
+    with pytest.raises(ValueError):
+        licensing.parse(tampered, now=now)
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    from cryptography.hazmat.primitives import serialization as ser
+    import base64
+    other = Ed25519PrivateKey.generate().private_bytes(ser.Encoding.Raw, ser.PrivateFormat.Raw, ser.NoEncryption())
+    with pytest.raises(ValueError):
+        licensing.parse("CM-MASTER-" + base64.b32encode(other).decode())   # someone else's key
+    with pytest.raises(ValueError, match="CM-"):
+        licensing.parse("hello")
+
+
+def test_code_is_remembered_and_clock_rollback_is_caught(test_keys):
+    master = licensing.parse(test_keys)
+    now = time_now = 1_800_000_000
+    lic = licensing.parse(licensing.issue(master, 30, now=now), now=now)
+    licensing.save(lic)
+    licensing._write(lic.code, now + 10 * 86400)                 # last seen 10 days later...
+    assert licensing.load(now=now + 2 * 86400) is None           # ...then the clock went back
+    assert licensing.load(now=now + 11 * 86400).kind == "user"
+    licensing.forget()
+    assert licensing.load(now=time_now) is None
+
+
+async def test_app_requires_a_code_and_only_master_issues(test_keys, tmp_path):
+    session = Session(Settings(session_dir=str(tmp_path)), lambda: None, asr=ScriptedASR(), answerer=FakeAnswerer())
+    assert session.license is None
+    async with TestClient(TestServer(build_app(session))) as client:
+        ws = await client.ws_connect("/ws")
+        assert json.loads((await ws.receive()).data)["license"] is None
+
+        async def until(kind, check=lambda m: True):
+            while True:
+                m = json.loads((await ws.receive()).data)
+                if m["type"] == kind and check(m):
+                    return m
+        await ws.send_json({"cmd": "ask", "text": "What is RANSAC?"})
+        assert "授权码" in (await until("activate_failed"))["message"]
+        await ws.send_json({"cmd": "activate", "code": "CM-WRONG"})
+        assert "无效" in (await until("activate_failed"))["message"]
+        await ws.send_json({"cmd": "activate", "code": test_keys})
+        assert (await until("status"))["license"] == {"kind": "master", "expires": None, "can_issue": True}
+        await ws.send_json({"cmd": "issue_code", "days": 3})
+        code = (await until("issued_code"))["code"]
+        await ws.send_json({"cmd": "logout"})
+        assert (await until("status"))["license"] is None
+        await ws.send_json({"cmd": "activate", "code": code})
+        info = (await until("status", lambda m: m["license"]))["license"]
+        assert info["kind"] == "user" and not info["can_issue"]
+        await ws.send_json({"cmd": "issue_code", "days": 3})
+        assert "主授权码" in (await until("error"))["message"]
+        await ws.close()
+    from classmate import config
+    assert json.loads((config.APP_DIR / "license.txt").read_text())["code"] == code     # remembered

@@ -2,6 +2,7 @@
 .env
 config.yaml
 settings.yaml
+license.txt
 sessions/
 notes/*
 !notes/.gitkeep

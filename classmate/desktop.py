@@ -119,6 +119,9 @@ def start_global_keys(session, loop: asyncio.AbstractEventLoop, capture="ctrl", 
     state = {"held": set(), "capture": False, "used": False}
 
     def run(coro):
+        if session.license is None:               # not authorized yet: global keys do nothing
+            coro.close()
+            return
         asyncio.run_coroutine_threadsafe(coro, loop)
 
     def modifier(key):

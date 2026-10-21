@@ -112,6 +112,15 @@
   #help.show { display: block; }
   @media (max-width: 560px) { aside { width: 150px; } }
 
+  #gate { position: fixed; inset: 0; background: var(--bg); z-index: 20; display: flex; align-items: center;
+          justify-content: center; padding: 16px; }
+  #gate .box { width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+               padding: 20px; }
+  #gate h2 { margin: 0 0 4px; font-size: 18px; }
+  #gate p { margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+  #gate textarea, #issued { width: 100%; font: 13px/1.5 var(--mono); padding: 8px; border-radius: 8px; border: 1px solid var(--line);
+                  background: var(--bg); color: var(--ink); resize: vertical; word-break: break-all; }
+  #gate .err { color: var(--warn); font-size: 13px; min-height: 1.4em; margin: 6px 0; }
   #settings { position: fixed; inset: 0; background: var(--bg); z-index: 10; display: flex; flex-direction: column; }
   #settings[hidden] { display: none; }
   #settings .top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line);
@@ -177,6 +186,15 @@
     <form id="askform"><input id="askinput" placeholder="打字提问…" autocomplete="off"><button>问</button></form>
   </div>
 </div>
+<div id="gate" hidden>
+  <div class="box">
+    <h2>输入授权码</h2>
+    <p>授权码以 CM- 开头。输入一次后会记住，过期后需要重新输入。</p>
+    <textarea id="gatecode" rows="3" placeholder="CM-…" spellcheck="false" autocomplete="off"></textarea>
+    <div class="err" id="gateerr"></div>
+    <button class="primary" id="gatebtn">进入</button>
+  </div>
+</div>
 <div id="settings" hidden>
   <div class="top"><span class="brand">设置</span><span class="spacer"></span><span id="setmsg"></span>
     <button id="setcancel">取消</button><button class="primary" id="setsave">保存</button></div>
@@ -215,6 +233,21 @@
     <label class="row"><span>Ctrl 用法</span><select id="f_capture_style">
       <option value="toggle">按一下开始录音，再按一下立即回答</option>
       <option value="hold">按住收录，松开回答（回答后再按 = 补充）</option></select></label>
+
+    <h3>授权</h3>
+    <div class="row"><span>当前授权</span><span id="licinfo" style="color:var(--ink)"></span></div>
+    <div class="hint"><button id="logout">更换授权码</button></div>
+    <div id="issuer" hidden>
+      <label class="row"><span>生成授权码</span><select id="issuedays">
+        <option value="1">1 天</option><option value="7" selected>7 天</option><option value="30">30 天</option>
+        <option value="90">90 天</option><option value="180">半年</option><option value="365">1 年</option>
+        <option value="custom">自定义天数…</option></select></label>
+      <label class="row" id="customrow" hidden><span>天数</span><input id="customdays" type="number" min="0.01" step="any" value="14"></label>
+      <div class="hint"><button class="primary" id="issuebtn">生成</button> <button id="copycode" hidden>复制</button></div>
+      <textarea id="issued" rows="3" readonly hidden></textarea>
+      <div class="hint" id="issuedinfo"></div>
+      <div class="hint">只有主授权码登录时能看到这里。生成的授权码到期后自动失效，用它登录的人不能再生成授权码。</div>
+    </div>
 
     <h3>快捷键 <button id="keyreset" style="float:right">恢复默认</button></h3>
     <div class="hint" style="margin-left:0">点右边的按钮，再按新按键或组合键（如 ⌃⌥S）。截图、框选、收录这三个键在其他软件里也生效；收录键可以只是一个修饰键（按住 Ctrl）。录框选键时按 ⌫ = 不用。方向键固定用来移动窗口；⌘Q、⌘W、⌘⇧3/4 这类系统快捷键会被 macOS 先拦走，别用。</div>
@@ -374,6 +407,7 @@ function handle(m) {
     $('auto').textContent = m.auto ? '自动 ✓' : '自动 ✗';
     $('meta').textContent = `${m.asr} · ${m.model}` + (m.notes.length ? ` · 课件 ${m.notes.length}` : '');
     if (m.keys) { keys = m.keys; applyKeys(); }
+    showLicense(m.license);
     $('opwrap').hidden = !m.native;
     const toggle = m.capture_style !== 'hold';
     // toggle style: Ctrl alone opens and closes the microphone, so no start button or auto-answer chips
@@ -417,6 +451,11 @@ function handle(m) {
     drawList();
   } else if (m.type === 'answer_done') {
     const q = qa.get(m.id); if (!q) return; q.done = m; draw();
+  } else if (m.type === 'activate_failed') {
+    $('gateerr').textContent = m.message; $('gatebtn').disabled = false;
+  } else if (m.type === 'issued_code') {
+    $('issued').hidden = $('copycode').hidden = false; $('issued').value = m.code;
+    $('issuedinfo').textContent = `有效期至 ${new Date(m.expires * 1000).toLocaleString()}`;
   } else if (m.type === 'config') {
     cfg = m; if (!$('settings').hidden && !cfgDirty) fillSettings();
   } else if (m.type === 'config_saved') {
@@ -446,6 +485,30 @@ $('newer').onclick = () => { view = -1; draw(); };
 $('helpbtn').onclick = () => $('help').classList.toggle('show');
 $('drawerbar').onclick = () => { const d = $('drawer'); d.classList.toggle('hidden'); $('drawerarrow').textContent = d.classList.contains('hidden') ? '▸' : '▾'; };
 $('askform').onsubmit = (e) => { e.preventDefault(); const v = $('askinput').value.trim(); if (v) { send({cmd: 'ask', text: v}); $('askinput').value = ''; view = -1; } $('askinput').blur(); };
+
+// ---------- authorization ----------
+function showLicense(lic) {
+  $('gate').hidden = !!lic;
+  if (!lic) { $('gatebtn').disabled = false; setTimeout(() => $('gatecode').focus(), 50); return; }
+  $('licinfo').textContent = lic.kind === 'master' ? '主授权码（永久，可生成授权码）'
+    : `授权码 · 有效期至 ${new Date(lic.expires * 1000).toLocaleString()}`;
+  $('issuer').hidden = !lic.can_issue;
+}
+$('gatebtn').onclick = () => {
+  const code = $('gatecode').value.trim();
+  if (!code) { $('gateerr').textContent = '请输入授权码'; return; }
+  $('gateerr').textContent = ''; $('gatebtn').disabled = true;
+  send({cmd: 'activate', code});
+};
+$('gatecode').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); $('gatebtn').click(); } });
+$('logout').onclick = () => { closeSettings(); $('gatecode').value = ''; send({cmd: 'logout'}); };
+$('issuedays').onchange = () => { $('customrow').hidden = $('issuedays').value !== 'custom'; };
+$('issuebtn').onclick = () => {
+  const v = $('issuedays').value, days = v === 'custom' ? +$('customdays').value : +v;
+  if (!(days > 0)) { setMsg('请填写有效天数', 'err'); return; }
+  send({cmd: 'issue_code', days});
+};
+$('copycode').onclick = () => { navigator.clipboard?.writeText($('issued').value); $('copycode').textContent = '已复制'; setTimeout(() => $('copycode').textContent = '复制', 1500); };
 
 // ---------- window opacity ----------
 function showOpacity(v) { $('opacity').value = v; $('opval').textContent = v + '%'; }
@@ -569,6 +632,7 @@ const RUN = {
 const capLone = () => ORDER.includes(keys.capture);       // capture key is a single modifier (default Ctrl)
 let capHeld = false, capUsed = false;     // capUsed: another key went down meanwhile (Ctrl+C is not a tap)
 document.addEventListener('keydown', (e) => {
+  if (!$('gate').hidden) return;                 // typing the authorization code
   if (!$('settings').hidden) {
     if (recording) recordKey(e);
     else if (e.key === 'Escape') closeSettings();

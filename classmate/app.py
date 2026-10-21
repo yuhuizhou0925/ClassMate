@@ -31,6 +31,7 @@ from pathlib import Path
 from aiohttp import WSMsgType, web
 
 from . import config
+from . import license as licensing
 from .asr import Transcript, make_asr
 from .context import TranscriptBuffer, load_notes
 from .llm import RESTART, Answerer
@@ -75,6 +76,7 @@ class Session:
         self.asr = asr or make_asr(settings)
         self.answerer = answerer or Answerer(settings)
         self.on_keys_changed = None                   # restarts the global key listener (set by __main__)
+        self.license = licensing.load()               # None until an authorization code is entered
         self.native = False                           # native window (opacity slider) or a browser tab
         self.notes, self.note_files = load_notes(settings.notes, settings.notes_max_chars)
         self.transcript = TranscriptBuffer()
@@ -134,6 +136,7 @@ class Session:
                 "log": str(self.log_path), "move_step": int(getattr(s, "move_step", 40)),
                 "keys": s.keys, "missing_keys": self.missing_keys(), "native": self.native,
                 "capture_style": s.capture_style,
+                "license": self.license.info() if self.license else None,
                 "opacity": s.opacity}
 
     def missing_keys(self) -> list[str]:
@@ -623,6 +626,17 @@ class Session:
             await self.cancel_capture()
         elif cmd == "screenshot":
             await self.screenshot(region=bool(msg.get("region")))
+        elif cmd == "logout":                          # enter a different authorization code
+            licensing.forget()
+            self.license = None
+            await self.stop()
+            await self.broadcast(self.status())
+        elif cmd == "issue_code":
+            if not (self.license and self.license.can_issue):
+                raise PermissionError("只有主授权码登录后才能生成授权码")
+            days = float(msg.get("days") or 0)
+            code = licensing.issue(self.license, days)
+            await self.broadcast({"type": "issued_code", "code": code, "expires": time.time() + days * 86400})
         elif cmd == "get_config":
             await self.broadcast(self.config_event())
         elif cmd == "save_config":
@@ -650,7 +664,20 @@ def build_app(session: Session, window_api=None) -> web.Application:
             if msg.type == WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
-                    if data.get("cmd") == "move" and window_api is not None:
+                    if data.get("cmd") == "activate":
+                        try:
+                            lic = licensing.parse(data.get("code", ""))
+                        except ValueError as error:
+                            await ws.send_str(json.dumps({"type": "activate_failed", "message": str(error)},
+                                                         ensure_ascii=False))
+                            continue
+                        licensing.save(lic)
+                        session.license = lic
+                        await session.broadcast(session.status())
+                    elif session.license is None:
+                        await ws.send_str(json.dumps({"type": "activate_failed", "message": "请先输入授权码"},
+                                                     ensure_ascii=False))
+                    elif data.get("cmd") == "move" and window_api is not None:
                         window_api.move(int(data.get("dx", 0)), int(data.get("dy", 0)))
                     elif data.get("cmd") == "opacity":
                         session.s.opacity = config.clamp_opacity(data.get("value", 1))
