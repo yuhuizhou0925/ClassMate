@@ -74,7 +74,7 @@ def main(argv=None):
         except ImportError:
             print("pywebview not installed: falling back to the browser (pip install pywebview)")
             native = False
-    api = WindowAPI(settings.opacity) if native else None
+    api = WindowAPI(settings.opacity, settings.hide_from_capture) if native else None
 
     def source():
         if a.file:

@@ -1115,3 +1115,32 @@ async def test_app_requires_a_code_and_only_master_issues(test_keys, tmp_path):
         await ws.close()
     from classmate import config
     assert json.loads((config.APP_DIR / "license.txt").read_text())["code"] == code     # remembered
+
+
+async def test_hide_from_screen_sharing_setting(tmp_path):
+    from classmate.desktop import WindowAPI
+    calls = []
+
+    class Native:
+        def setSharingType_(self, v):
+            calls.append(("sharing", v))
+
+        def setAlphaValue_(self, v):
+            calls.append(("alpha", v))
+    import PyObjCTools.AppHelper as helper
+    orig = helper.callAfter
+    helper.callAfter = lambda fn, *a: fn(*a)
+    try:
+        api = WindowAPI(0.8, hide_from_capture=True)
+        api.window = type("W", (), {"native": Native()})()
+        api.apply()                                     # on window shown
+        assert calls == [("alpha", 0.8), ("sharing", 0)]
+        assert Settings().hide_from_capture is True
+        session = Session(Settings(session_dir=str(tmp_path)), lambda: None, asr=ScriptedASR(),
+                          answerer=FakeAnswerer())
+        build_app(session, api)
+        session.broadcast = lambda e: asyncio.sleep(0)
+        await session.save_config({"hide_from_capture": False})
+        assert calls[-1] == ("sharing", 1) and session.s.hide_from_capture is False
+    finally:
+        helper.callAfter = orig

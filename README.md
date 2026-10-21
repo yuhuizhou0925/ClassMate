@@ -50,6 +50,7 @@ This is an open-source project: the code keeps out people who simply download an
 - **Session log**: every lecture's transcript and answers are saved to `sessions/<date>_<time>.md`.
 - **Settings panel**: answer model (Claude, DeepSeek, Doubao, Qwen or any OpenAI-compatible endpoint), model names, API keys, speech recognition, shortcuts and authorization. Changes apply immediately without a restart.
 - **Window opacity**: a slider in the top bar (20%-100%), remembered between runs. Native window only.
+- **Hidden from screen sharing**: by default the window is left out of screen sharing (Zoom, Teams, ...), screen recordings and screenshots while it stays visible on your own screen. Turn it off under Settings > Window. Native window only; some meeting apps on recent macOS versions may not honour it, so check once before relying on it.
 - **Latency display**: each answer shows the time to the first word and to completion, measured from the end of the question.
 
 ## Keyboard shortcuts
@@ -83,7 +84,7 @@ The app is a small native Mac window (760x620 by default); start with `--browser
   - **Screen Recording**: for screenshots (without it, screenshots only show the desktop background);
   - **Microphone**: for recording.
   Use `--no-global-keys` to make the keys work only while the ClassMate window has focus.
-- ClassMate is a normal window and is visible when you share your whole screen.
+- With "hide from screen sharing" turned off, ClassMate is a normal window and is visible when you share your whole screen.
 
 ## Installation (macOS, Python 3.10+)
 

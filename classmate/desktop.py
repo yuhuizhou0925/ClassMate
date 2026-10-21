@@ -10,22 +10,36 @@ log = logging.getLogger("classmate.desktop")
 
 class WindowAPI:
     """Moves the native window and sets its opacity; called from the server thread."""
-    def __init__(self, opacity: float = 1.0):
+    def __init__(self, opacity: float = 1.0, hide_from_capture: bool = False):
         self.window = None
         self._pos = None
         self.opacity = opacity
+        self.hide_from_capture = hide_from_capture
 
-    def set_opacity(self, value: float):
-        """Whole-window transparency (macOS NSWindow alphaValue), applied on the UI thread."""
-        self.opacity = value
+    def _on_ui_thread(self, method: str, value):
         native = getattr(self.window, "native", None)
         if native is None:
             return                                  # applied when the window is shown
         try:
             from PyObjCTools import AppHelper
-            AppHelper.callAfter(native.setAlphaValue_, value)
+            AppHelper.callAfter(getattr(native, method), value)
         except Exception as error:
-            log.warning("cannot set window opacity: %s", error)
+            log.warning("cannot call %s: %s", method, error)
+
+    def set_hidden_from_capture(self, hide: bool):
+        """Screen sharing (Zoom, Teams...), screen recordings and screenshots leave the window out while it stays
+        visible on this screen (NSWindow.sharingType: 0 = none, 1 = read-only, the default)."""
+        self.hide_from_capture = hide
+        self._on_ui_thread("setSharingType_", 0 if hide else 1)
+
+    def apply(self):
+        self.set_opacity(self.opacity)
+        self.set_hidden_from_capture(self.hide_from_capture)
+
+    def set_opacity(self, value: float):
+        """Whole-window transparency (macOS NSWindow alphaValue), applied on the UI thread."""
+        self.opacity = value
+        self._on_ui_thread("setAlphaValue_", value)
 
     def move(self, dx: int, dy: int):
         w = self.window
@@ -167,5 +181,5 @@ def run_native(url: str, settings, server_thread: threading.Thread, api: WindowA
                                    min_size=(320, 260), text_select=True)
     api.window = window
     window.events.closed += on_close
-    window.events.shown += lambda: api.set_opacity(api.opacity)
+    window.events.shown += api.apply
     webview.start()

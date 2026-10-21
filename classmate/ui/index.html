@@ -229,6 +229,11 @@
     <label class="row"><span>语言</span><select id="f_language">
       <option value="auto">自动（支持中英混说）</option><option value="zh">中文</option><option value="en">English</option></select></label>
 
+    <h3>窗口</h3>
+    <label class="row"><span>共享屏幕时隐藏</span><span><input type="checkbox" id="f_hide_from_capture" style="width:auto">
+      共享屏幕、录屏和截图里看不到这个窗口，你自己的屏幕上照常显示</span></label>
+    <div class="hint">只对原生窗口有效（浏览器模式无效）。少数会议软件可能不认这个设置，第一次用时请先确认一下。</div>
+
     <h3>提问方式</h3>
     <label class="row"><span>Ctrl 用法</span><select id="f_capture_style">
       <option value="toggle">按一下开始录音，再按一下立即回答</option>
@@ -518,7 +523,7 @@ $('opacity').onchange = (e) => { send({cmd: 'opacity', value: e.target.value / 1
 // ---------- settings panel ----------
 let cfg = null, draft = null, recording = null, saving = false, cfgDirty = false;
 const FIELDS = ['llm', 'llm_model', 'llm_deep_model', 'llm_vision_model', 'llm_base_url', 'vision', 'asr', 'language',
-                'answer_style', 'code_language', 'capture_style'];
+                'answer_style', 'code_language', 'capture_style', 'hide_from_capture'];
 function setMsg(t, cls = '') { const e = $('setmsg'); e.textContent = t; e.className = cls; }
 function openSettings() { $('settings').hidden = false; cfgDirty = false; setMsg(''); send({cmd: 'get_config'}); if (cfg) fillSettings(); }
 function closeSettings() { $('settings').hidden = true; recording = null; }
@@ -526,6 +531,7 @@ function fillSettings() {
   const v = cfg.values;
   $('f_llm').innerHTML = Object.entries(cfg.providers).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('');
   FIELDS.forEach(f => {
+    if ($('f_' + f).type === 'checkbox') { $('f_' + f).checked = !!v[f]; return; }
     const el = $('f_' + f), val = v[f] || '';
     if (el.tagName === 'SELECT' && val && ![...el.options].some(o => o.value === val)) el.add(new Option(val, val));
     el.value = val;
@@ -605,7 +611,7 @@ $('setbtn').onclick = openSettings;
 $('setcancel').onclick = closeSettings;
 $('setsave').onclick = () => {
   const values = {keys: draft.keys};
-  FIELDS.forEach(f => { values[f] = $('f_' + f).value.trim(); });
+  FIELDS.forEach(f => { const el = $('f_' + f); values[f] = el.type === 'checkbox' ? el.checked : el.value.trim(); });
   const api_keys = {};
   ['f_llm_key', 'f_asr_key'].forEach(id => { const v = $(id).value.trim(); if (v) api_keys[$(id).dataset.env] = v; });
   if (values.llm === 'openai' && !values.llm_model) { setMsg('OpenAI 兼容接口需要填模型名', 'err'); return; }

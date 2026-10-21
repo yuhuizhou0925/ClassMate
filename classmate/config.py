@@ -143,6 +143,7 @@ class Settings:
     window_size: list[int] = field(default_factory=lambda: [760, 620])
     move_step: int = 40                     # pixels per arrow-key press (Option+arrow: 10)
     opacity: float = 1.0                    # native window opacity, 0.2 - 1.0 (slider in the top bar)
+    hide_from_capture: bool = True          # leave the window out of screen sharing, recordings and screenshots
     global_ctrl: bool = True                # capture key works anywhere on the Mac (needs Accessibility permission)
     capture_style: str = "toggle"           # toggle: tap Ctrl to record, tap again to answer | hold: hold, release
     # screenshots
@@ -256,7 +257,7 @@ def save_env_key(name: str, value: str) -> Path:
 # Choices made in the settings panel: they override config.yaml, and command-line flags override them.
 UI_SETTINGS = APP_DIR / "settings.yaml"
 UI_FIELDS = ("llm", "llm_model", "llm_deep_model", "llm_vision_model", "llm_base_url", "vision", "asr", "asr_model",
-             "language", "answer_style", "code_language", "capture_style", "keys", "opacity")
+             "language", "answer_style", "code_language", "capture_style", "keys", "opacity", "hide_from_capture")
 
 
 def read_ui_settings() -> dict:

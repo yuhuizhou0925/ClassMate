@@ -78,6 +78,7 @@ class Session:
         self.on_keys_changed = None                   # restarts the global key listener (set by __main__)
         self.license = licensing.load()               # None until an authorization code is entered
         self.native = False                           # native window (opacity slider) or a browser tab
+        self.window_api = None
         self.notes, self.note_files = load_notes(settings.notes, settings.notes_max_chars)
         self.transcript = TranscriptBuffer()
         self.clients: set[web.WebSocketResponse] = set()
@@ -180,6 +181,8 @@ class Session:
         for k in ("llm_model", "llm_deep_model", "llm_vision_model", "llm_base_url", "asr_model"):
             if k in values:
                 values[k] = (values[k] or "").strip() or None
+        if "hide_from_capture" in values:
+            values["hide_from_capture"] = bool(values["hide_from_capture"])
         if "code_language" in values:
             values["code_language"] = (values["code_language"] or "").strip()[:40]
         if values.get("llm", s.llm) != s.llm:            # models of the old provider do not carry over
@@ -224,6 +227,8 @@ class Session:
                 await self.start()
         if "keys" in changed and self.on_keys_changed:
             self.on_keys_changed()
+        if "hide_from_capture" in changed and self.window_api is not None:
+            self.window_api.set_hidden_from_capture(bool(s.hide_from_capture))
         await self.broadcast(self.status())
         await self.broadcast(self.config_event())
         await self.broadcast({"type": "config_saved"})
@@ -646,6 +651,7 @@ class Session:
 def build_app(session: Session, window_api=None) -> web.Application:
     app = web.Application()
     session.native = window_api is not None
+    session.window_api = window_api
 
     async def index(_):
         return web.FileResponse(UI)
