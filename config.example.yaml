@@ -11,13 +11,13 @@ keyterms:                  # course vocabulary improves recognition of technical
   - homography
 
 # --- answers ---
-# Everything in this file can also be changed in the app: ⚙ settings (saved to settings.yaml, which overrides this file).
+# Everything in this file can also be changed in the app's settings panel (saved to settings.yaml, which overrides this file).
 # llm: deepseek            # anthropic | deepseek | doubao | qwen | openai. Leave unset to use whichever key is in .env
 # llm_model / llm_deep_model / llm_vision_model: empty = provider default
 #   anthropic: claude-haiku-5-5 / claude-sonnet-5-5                       key ANTHROPIC_API_KEY
 #   deepseek:  deepseek-flash / deepseek-v4-pro (screenshots via OCR)     key DEEPSEEK_API_KEY
 #   doubao:    doubao-seed-1-6-flash-250828 / doubao-seed-1-6-251015      key ARK_API_KEY
-#              (any Model ID from the 火山方舟 model list, or an endpoint id ep-xxxx)
+#              (any Model ID from the Volcengine Ark model list, or an endpoint id ep-xxxx)
 #   qwen:      qwen-flash / qwen-plus, screenshots qwen3-vl-plus          key DASHSCOPE_API_KEY
 #              (international site: llm_base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1)
 # Example for Groq (very fast open models):
@@ -28,7 +28,7 @@ max_tokens: 400
 answer_style: concise      # concise | detailed
 code_language: ""          # e.g. Python / Java / C++: language for code in answers; empty = follow the question
 auto_answer: true
-min_turn_chars: 6          # ignore short fillers ("嗯", "是的", "okay") in every_turn mode
+min_turn_chars: 6          # ignore short fillers ("okay", "yeah", short Chinese acknowledgements) in every_turn mode
 capture_mode: every_turn   # every_turn: answer after every pause | questions: only turns detected as questions
 history_answers: 6         # earlier Q&A pairs given to the model, so follow-ups build on previous answers
 context_minutes: 8
