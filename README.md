@@ -1,6 +1,6 @@
 # ClassMate: live lecture transcription with answer drafts
 
-ClassMate transcribes a lecture live on your Mac. When the lecturer asks the class a question, you record it with one key press and get a streamed answer draft within about a second. Screenshots of slides, quizzes or code are answered as well.
+ClassMate transcribes a lecture live on your Mac or Windows PC. When the lecturer asks the class a question, you record it with one key press and get a streamed answer draft within about a second. Screenshots of slides, quizzes or code are answered as well.
 
 ```
 Microphone / Zoom audio -> streaming speech recognition -> question capture -> streamed answer -> app window
@@ -24,6 +24,20 @@ The interface is in Chinese; the menu names in this README are translations.
 Models, API keys and shortcuts can be changed in the settings panel (gear button in the top-right corner, or Cmd+,).
 
 API keys are never included in this repository. Every user configures their own keys in `.env` or the settings panel.
+
+## Quick start (Windows 10 / 11)
+
+1. Install Python 3.10 or later from https://www.python.org/downloads/windows/ and tick "Add python.exe to PATH" during setup.
+2. Double-click `Classmate.bat`. The first run installs everything (a few minutes).
+3. Enter your API keys in the settings panel, which opens by itself when a key is missing.
+
+Differences from macOS:
+- The settings shortcut is Alt+, (instead of Cmd+,); key names are shown as Ctrl / Alt / Shift / Win.
+- Shift+Tab opens the Windows snipping overlay (the same as Win+Shift+S); drag a rectangle and it is answered.
+- Text recognition for screenshots uses the built-in Windows OCR. It needs the optical character recognition feature of a language pack: Settings > Time & language > Language & region > Chinese (Simplified) or English > Language options. Without it, choose "send image" as the screenshot mode in the settings.
+- "Hide from screen sharing" needs Windows 10 version 2004 or later; older versions show the window as a black box instead.
+- To transcribe Zoom / Teams audio directly, enable "Stereo Mix" (Sound settings > More sound settings > Recording) or install VB-Audio Virtual Cable, then run `python -m classmate --device "Stereo Mix"` (or `--device CABLE`). `python -m classmate --list-devices` shows the names.
+- Windows support has been tested with simulated system calls; please report problems on a real machine.
 
 ## Authorization codes
 
@@ -79,7 +93,7 @@ The app is a small native Mac window (760x620 by default); start with `--browser
 - Prefer the older style (hold Ctrl to capture, release to answer, and the microphone always on with automatic answers after each pause)? Settings > How to ask > Ctrl usage > Hold.
 - **Custom shortcuts**: every key above except the arrow keys can be changed under Settings > Shortcuts. Click a button and press the new key or combination (for example Ctrl+Option+S). Conflicts are highlighted and cannot be saved; "Reset" restores the defaults. They can also be set under `keys:` in `config.yaml` (see `config.example.yaml`).
 - Ctrl, `, Tab and Shift+Tab also work while another app (Zoom, slides) has focus. A normal Tab in another app also takes a screenshot, so you may want to change the screenshot key to something like F5.
-- On first use, macOS asks for permissions under System Settings > Privacy & Security:
+- On first use, macOS asks for permissions under System Settings > Privacy & Security (Windows needs none):
   - **Accessibility** and **Input Monitoring**: for the global keys;
   - **Screen Recording**: for screenshots (without it, screenshots only show the desktop background);
   - **Microphone**: for recording.
@@ -168,7 +182,7 @@ ClassMate is meant to help you follow a lecture, understand questions and organi
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 80 tests
+pytest -q          # 85 tests
 ```
 
 | File | Purpose |
@@ -182,7 +196,8 @@ pytest -q          # 80 tests
 | `classmate/context.py` | Course notes loading, transcript buffer |
 | `classmate/app.py` | Question capture rules, follow-up history, reconnects, session log, WebSocket server |
 | `classmate/desktop.py` | Native window (pywebview), global keys (pynput) |
-| `classmate/screenshot.py` | Screen capture (macOS screencapture), on-device text recognition (macOS Vision) |
+| `classmate/screenshot.py` | Screen capture and on-device text recognition (macOS screencapture + Vision; Windows ImageGrab + Windows OCR) |
+| `classmate/winplat.py` | Windows system calls: opacity, hiding from screen capture, finding the window you are looking at |
 | `classmate/ui/index.html` | User interface and settings panel (follows dark mode) |
 
 ## Troubleshooting

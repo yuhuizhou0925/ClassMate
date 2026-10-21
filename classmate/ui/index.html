@@ -8,7 +8,7 @@
   :root {
     --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6e6e73; --line: #e3e1dc;
     --accent: #2f6f5e; --accent-soft: #e4f0ec; --rec: #d23b3b; --rec-soft: #fbe9e7; --warn: #b4442f;
-    --partial: #8a8a8f; --side: #efede8; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --partial: #8a8a8f; --side: #efede8; --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root { --bg: #161617; --panel: #1f1f21; --ink: #ececee; --muted: #9a9aa0; --line: #2e2e31;
@@ -19,7 +19,8 @@
   [hidden] { display: none !important; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
-         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; }
+         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Segoe UI",
+               "Microsoft YaHei", sans-serif; }
   header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line);
            background: var(--panel); flex-wrap: wrap; }
   .brand { font-weight: 650; }
@@ -264,7 +265,7 @@
 const $ = (id) => document.getElementById(id);
 let ws, st = {}, step = 40;
 let keys = {screenshot: 'tab', region: 'shift+tab', capture: 'ctrl', append: '`', answer_now: 'space', cancel: 'escape', deep: 'd', copy: 'c', mode: 'm',
-            list: 'l', transcript: 't', ask: '/', help: '?', prev: 'shift+up', next: 'shift+down', settings: 'cmd+,'};
+            list: 'l', transcript: 't', ask: '/', help: '?', prev: 'shift+up', next: 'shift+down', settings: /Mac/.test(navigator.platform) ? 'cmd+,' : 'alt+,'};
 const ACTIONS = {screenshot: '截图并回答', region: '框选区域截图', capture: '录音提问（用法见上）', append: '追加到当前问题（按一下开始，再按结束）', answer_now: '立即回答', cancel: '放弃收录',
                  deep: '深度回答', copy: '复制答案', prev: '上一题', next: '下一题', mode: '切换 每段话 / 仅提问',
                  list: '显示 / 隐藏问题列表', transcript: '展开实时转写', ask: '打字提问', help: '显示快捷键', settings: '打开设置'};
@@ -287,13 +288,18 @@ function combo(e) {            // 'ctrl+alt+shift+cmd+key'; Shift is part of sym
   const symbol = k.length === 1 && !/[a-z0-9]/.test(k);
   return (e.ctrlKey ? 'ctrl+' : '') + (e.altKey ? 'alt+' : '') + (e.shiftKey && !symbol ? 'shift+' : '') + (e.metaKey ? 'cmd+' : '') + k;
 }
-const PRETTY = {ctrl: 'Ctrl', alt: '⌥', shift: '⇧', cmd: '⌘', space: 'Space', escape: 'Esc', tab: 'Tab', enter: '↩',
-                backspace: '⌫', delete: '⌦', up: '↑', down: '↓', left: '←', right: '→'};
+const IS_MAC = /Mac/.test(navigator.platform);
+const PRETTY = IS_MAC
+  ? {ctrl: 'Ctrl', alt: '⌥', shift: '⇧', cmd: '⌘', space: 'Space', escape: 'Esc', tab: 'Tab', enter: '↩',
+     backspace: '⌫', delete: '⌦', up: '↑', down: '↓', left: '←', right: '→'}
+  : {ctrl: 'Ctrl', alt: 'Alt', shift: 'Shift', cmd: 'Win', space: 'Space', escape: 'Esc', tab: 'Tab', enter: 'Enter',
+     backspace: 'Backspace', delete: 'Del', up: '↑', down: '↓', left: '←', right: '→'};
 const ORDER = ['ctrl', 'alt', 'shift', 'cmd'];
 const splitKey = (c) => { const parts = c.split(/\+(?=.)/); return {mods: parts.slice(0, -1), main: parts[parts.length - 1]}; };
 const withShift = (c) => { const {mods, main} = splitKey(c);
   return mods.includes('shift') || ORDER.includes(main) ? '' : [...ORDER.filter(m => m === 'shift' || mods.includes(m)), main].join('+'); };
-const pretty = (c) => c.split(/\+(?=.)/).map(p => PRETTY[p] || (p.length === 1 ? p.toUpperCase() : p.toUpperCase())).join('');
+// Mac style: ⌘⇧S; Windows style: Ctrl+Shift+S
+const pretty = (c) => c.split(/\+(?=.)/).map(p => PRETTY[p] || p.toUpperCase()).join(IS_MAC ? '' : '+');
 function applyKeys() {
   document.querySelectorAll('[data-k]').forEach(el => {
     const a = el.dataset.k;

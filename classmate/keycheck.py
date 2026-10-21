@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import sys
 
 from .config import KEY_SOURCES, Settings, clean, mask
 
@@ -82,5 +83,8 @@ def check_screenshot(settings: Settings) -> int:
     except Exception as error:
         print(f"OCR not available: {error}")
         status = 1 if mode == "ocr" else 0
-    subprocess.run(["open", str(path)], check=False)      # show the captured image
+    if sys.platform == "win32":
+        os.startfile(str(path))                           # show the captured image
+    else:
+        subprocess.run(["open", str(path)], check=False)
     return status

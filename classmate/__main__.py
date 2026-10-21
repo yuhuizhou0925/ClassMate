@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import sys
 import threading
 import webbrowser
 
@@ -41,6 +42,9 @@ def main(argv=None):
     p.add_argument("-v", "--verbose", action="store_true")
     a = p.parse_args(argv)
 
+    if sys.platform == "win32":
+        from .winplat import set_dpi_aware
+        set_dpi_aware()                        # window rectangles in real pixels, matching screenshots
     logging.basicConfig(level=logging.INFO if a.verbose else logging.WARNING,
                         format="%(asctime)s %(name)s %(levelname)s %(message)s")
     if a.list_devices:

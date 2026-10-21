@@ -1144,3 +1144,78 @@ async def test_hide_from_screen_sharing_setting(tmp_path):
         assert calls[-1] == ("sharing", 1) and session.s.hide_from_capture is False
     finally:
         helper.callAfter = orig
+
+
+# ---------------- Windows support (logic tested with fakes; the real calls need Windows) ----------------
+def test_windows_picks_the_window_you_are_looking_at():
+    from classmate.winplat import pick_window
+    base = {"visible": True, "minimized": False, "cloaked": False, "tool": False, "class": "Chrome_WidgetWin_1"}
+    windows = [
+        {**base, "hwnd": 1, "pid": 99, "title": "Classmate", "rect": (0, 0, 760, 620)},          # ourselves
+        {**base, "hwnd": 2, "pid": 5, "title": "tooltip", "rect": (0, 0, 120, 40)},              # too small
+        {**base, "hwnd": 3, "pid": 6, "title": "Hidden", "rect": (0, 0, 900, 700), "cloaked": True},
+        {**base, "hwnd": 4, "pid": 7, "title": "Zoom Meeting", "rect": (10, 20, 1290, 820)},
+        {**base, "hwnd": 5, "pid": 8, "title": "Desktop", "class": "Progman", "rect": (0, 0, 1920, 1080)},
+    ]
+    assert pick_window(windows, own_pid=99) == (10, 20, 1290, 820)
+    assert pick_window(windows[:3], own_pid=99) is None
+
+
+def test_windows_key_codes_do_not_clash(monkeypatch):
+    from enum import Enum
+    from classmate import desktop
+
+    class Key(Enum):
+        shift = 1
+
+    class KeyCode:
+        def __init__(self, char=None, vk=None):
+            self.char, self.vk = char, vk
+    kb = type("Keyboard", (), {"Key": Key, "KeyCode": KeyCode})
+    monkeypatch.setattr(desktop, "VK", desktop.WIN_VK)
+    append = desktop.Shortcut(kb, "`")
+    assert append.pressed(KeyCode("·", 0xC0), set())                  # the ` key with a Chinese IME
+    assert not append.pressed(KeyCode("2", 50), set())                # 50 is the 2 key on Windows
+    assert desktop.Shortcut(kb, "ctrl+alt+s").pressed(KeyCode("\x13", ord("S")), {"ctrl", "alt"})
+    from classmate.config import validate_keys
+    assert validate_keys({"settings": "alt+,"})["settings"] == "alt+,"   # Windows default works with Ctrl
+
+
+async def test_windows_screenshots(monkeypatch, tmp_path):
+    from PIL import Image
+    import PIL.ImageGrab
+    from classmate import screenshot, winplat
+    grabs = []
+    monkeypatch.setattr(PIL.ImageGrab, "grab", lambda bbox=None, all_screens=False: grabs.append((bbox, all_screens))
+                        or Image.new("RGB", (1280, 800), "white"))
+    monkeypatch.setattr(winplat, "frontmost_window_rect", lambda pid: (10, 20, 1290, 820))
+    image = await screenshot.grab_windows(region=False, target="window")
+    assert image.size == (1280, 800) and grabs[-1] == ((10, 20, 1290, 820), True)
+    await screenshot.grab_windows(region=False, target="screen")
+    assert grabs[-1] == (None, False)
+    clips = iter([None, None, Image.new("RGB", (300, 200), "black")])     # before, still nothing, the snip
+    monkeypatch.setattr(PIL.ImageGrab, "grabclipboard", lambda: next(clips))
+    opened = []
+    monkeypatch.setattr(winplat, "open_snipping_tool", lambda: opened.append(True))
+    monkeypatch.setattr(screenshot.asyncio, "sleep", lambda s: _done())     # do not wait 0.2 s per poll
+    snip = await screenshot.grab_windows(region=True, target="window")
+    assert opened and snip.size == (300, 200)
+    assert screenshot.join_cjk("单 应 性 matrix 是 3x3 矩 阵") == "单应性 matrix 是 3x3 矩阵"
+
+
+async def _done():
+    return None
+
+
+def test_windows_window_settings(monkeypatch):
+    from classmate import desktop, winplat
+    calls = []
+    monkeypatch.setattr(desktop.sys, "platform", "win32")
+    monkeypatch.setattr(winplat, "hwnd_of", lambda w: 4242)
+    monkeypatch.setattr(winplat, "set_opacity", lambda h, a: calls.append(("opacity", h, a)))
+    monkeypatch.setattr(winplat, "hide_from_capture", lambda h, hide: calls.append(("hide", h, hide)) or True)
+    api = desktop.WindowAPI(0.7, hide_from_capture=True)
+    api.window = object()                            # no WinForms Invoke here: applied directly
+    api.apply()
+    api.set_hidden_from_capture(False)
+    assert calls == [("opacity", 4242, 0.7), ("hide", 4242, True), ("hide", 4242, False)]

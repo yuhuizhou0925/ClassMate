@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import re
+import sys
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
@@ -40,7 +41,9 @@ DEFAULT_KEYS = {
     "capture": "ctrl",          # global; tap to record a question, tap again to answer
     "append": "`",              # global; record more for the current question (the key that types · in Chinese)
     "answer_now": "space", "cancel": "escape", "deep": "d", "copy": "c", "mode": "m", "list": "l",
-    "transcript": "t", "ask": "/", "help": "?", "prev": "shift+up", "next": "shift+down", "settings": "cmd+,",
+    "transcript": "t", "ask": "/", "help": "?", "prev": "shift+up", "next": "shift+down",
+    # Cmd+, on a Mac; Windows has no Cmd key and a lone Ctrl already records, so Alt+, there
+    "settings": "cmd+," if sys.platform == "darwin" else "alt+,",
 }
 KEY_LABELS = {"screenshot": "截图", "region": "框选截图", "capture": "录音提问", "append": "追加到当前问题", "answer_now": "立即回答", "cancel": "放弃收录", "deep": "深度回答",
               "copy": "复制答案", "mode": "切换模式", "list": "问题列表", "transcript": "实时转写", "ask": "打字提问",

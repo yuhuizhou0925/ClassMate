@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import sys
 import threading
 
 log = logging.getLogger("classmate.desktop")
@@ -17,6 +18,8 @@ class WindowAPI:
         self.hide_from_capture = hide_from_capture
 
     def _on_ui_thread(self, method: str, value):
+        if sys.platform == "win32":
+            return self._windows(method, value)
         native = getattr(self.window, "native", None)
         if native is None:
             return                                  # applied when the window is shown
@@ -25,6 +28,25 @@ class WindowAPI:
             AppHelper.callAfter(getattr(native, method), value)
         except Exception as error:
             log.warning("cannot call %s: %s", method, error)
+
+    def _windows(self, method: str, value):
+        """Same settings on Windows, through the window handle, run on the window's own (WinForms) thread."""
+        from . import winplat
+        hwnd = winplat.hwnd_of(self.window)
+        if hwnd is None:
+            return                                  # applied when the window is shown
+        if method == "setAlphaValue_":
+            def apply():
+                winplat.set_opacity(hwnd, value)
+        else:
+            def apply():
+                if not winplat.hide_from_capture(hwnd, value == 0):
+                    log.warning("cannot hide the window from screen capture (needs Windows 10 2004 or later)")
+        try:
+            from System import Action              # pythonnet, installed with pywebview on Windows
+            self.window.native.Invoke(Action(apply))
+        except Exception:
+            apply()
 
     def set_hidden_from_capture(self, hide: bool):
         """Screen sharing (Zoom, Teams...), screen recordings and screenshots leave the window out while it stays
@@ -57,9 +79,14 @@ class WindowAPI:
 MODIFIER_KEYS = {"ctrl": ("ctrl", "ctrl_l", "ctrl_r"), "alt": ("alt", "alt_l", "alt_r", "alt_gr"),
                  "cmd": ("cmd", "cmd_l", "cmd_r"), "shift": ("shift", "shift_l", "shift_r")}
 PYNPUT_NAMES = {"escape": "esc"}
-# macOS virtual key codes: with Option or Ctrl held the typed character changes (⌥S = ß), the key code does not
+# Virtual key codes: with Option or Ctrl held the typed character changes (⌥S = ß on a Mac, Ctrl+S = \x13 on
+# Windows), the key code does not. The two systems number keys differently.
 MAC_VK = dict(zip("asdfhgzxcv", range(10))) | dict(zip("bqweryt123465=97-80]ou[ip", range(11, 36))) | {
     "l": 37, "j": 38, "'": 39, "k": 40, ";": 41, "\\": 42, ",": 43, "/": 44, "n": 45, "m": 46, ".": 47, "`": 50}
+WIN_VK = {c: ord(c.upper()) for c in "abcdefghijklmnopqrstuvwxyz0123456789"} | {
+    ";": 0xBA, "=": 0xBB, ",": 0xBC, "-": 0xBD, ".": 0xBE, "/": 0xBF, "`": 0xC0, "[": 0xDB, "\\": 0xDC, "]": 0xDD,
+    "'": 0xDE}
+VK = MAC_VK if sys.platform == "darwin" else WIN_VK if sys.platform == "win32" else {}
 
 
 def key_matcher(keyboard, name: str):
@@ -75,7 +102,7 @@ def key_matcher(keyboard, name: str):
         special = getattr(keyboard.Key, attr)
         return lambda key: key == special
     if len(name) == 1:
-        vk = MAC_VK.get(name)
+        vk = VK.get(name)
         return lambda key: ((getattr(key, "char", None) or "").lower() == name
                             or (vk is not None and getattr(key, "vk", None) == vk))
     raise ValueError(f"Unknown key {name!r}")
