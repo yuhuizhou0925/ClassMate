@@ -1,0 +1,607 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Classmate</title>
+<style>
+  :root {
+    --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6e6e73; --line: #e3e1dc;
+    --accent: #2f6f5e; --accent-soft: #e4f0ec; --rec: #d23b3b; --rec-soft: #fbe9e7; --warn: #b4442f;
+    --partial: #8a8a8f; --side: #efede8; --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #161617; --panel: #1f1f21; --ink: #ececee; --muted: #9a9aa0; --line: #2e2e31;
+            --accent: #6fc2a8; --accent-soft: #1f332d; --rec: #ef6b6b; --rec-soft: #3a2224; --warn: #e07a62;
+            --partial: #7d7d83; --side: #1a1a1c; }
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
+         font: 15px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif; }
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line);
+           background: var(--panel); flex-wrap: wrap; }
+  .brand { font-weight: 650; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--rec); box-shadow: 0 0 0 4px color-mix(in srgb, var(--rec) 18%, transparent); }
+  button { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+           padding: 4px 10px; border-radius: 7px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  @media (prefers-color-scheme: dark) { button.primary { color: #0d1f1a; } }
+  .chip { font-size: 12px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px;
+          cursor: pointer; user-select: none; white-space: nowrap; }
+  .spacer { flex: 1; }
+  #opwrap { display: flex; align-items: center; gap: 5px; cursor: default; }
+  #opwrap input { width: 72px; accent-color: var(--accent); margin: 0; }
+  #opval { font: 11px var(--mono); min-width: 30px; text-align: right; }
+  .meta { color: var(--muted); font: 11.5px var(--mono); }
+
+  .body { flex: 1; min-height: 0; display: flex; }
+  aside { width: 230px; flex: none; border-right: 1px solid var(--line); background: var(--side); display: flex;
+          flex-direction: column; min-height: 0; }
+  aside.hidden { display: none; }
+  aside h2 { margin: 0; padding: 10px 12px 6px; font: 600 11px var(--mono); letter-spacing: .06em; color: var(--muted);
+             text-transform: uppercase; display: flex; justify-content: space-between; }
+  #list { overflow-y: auto; flex: 1; padding: 0 6px 10px; }
+  .item { padding: 7px 8px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; border: 1px solid transparent; }
+  .item:hover { background: var(--panel); }
+  .item.sel { background: var(--panel); border-color: var(--accent); }
+  .item .t { font-size: 13.5px; font-weight: 600; display: flex; gap: 6px; align-items: baseline; }
+  .item .t .n { font: 500 11px var(--mono); color: var(--muted); flex: none; }
+  .item .t .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .p { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+             margin-top: 1px; }
+  .item.shot .t .s::before { content: "▣ "; color: var(--accent); }
+  .item .live { color: var(--accent); }
+  .noitems { color: var(--muted); font-size: 12.5px; padding: 8px; }
+
+  .right { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+  #capture { margin: 10px 12px 0; border-radius: 10px; padding: 8px 12px; font-size: 15px; display: none;
+             max-height: 38vh; overflow-y: auto; flex: none;
+             border: 1px solid var(--line); background: var(--panel); }
+  #capture.show { display: block; }
+  #capture.rec { border-color: var(--rec); background: var(--rec-soft); }
+  #capture .label { font: 600 11.5px var(--mono); color: var(--muted); margin-bottom: 2px; }
+  #capture.rec .label { color: var(--rec); }
+  #capture .live { color: var(--partial); font-style: italic; }
+  #capture .live:empty::after { content: attr(data-idle); }
+  #capture.rec .label::first-letter { animation: blink 1s steps(2, start) infinite; }
+  @keyframes blink { to { visibility: hidden; } }
+  main { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px; }
+  .nav { display: flex; align-items: center; gap: 8px; color: var(--muted); font: 12px var(--mono); margin-bottom: 6px; }
+  .nav .newer { color: var(--accent); cursor: pointer; display: none; }
+  .nav .newer.show { display: inline; }
+  .card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; background: var(--panel); }
+  .card.latest { border-color: var(--accent); }
+  .q { font-weight: 600; margin-bottom: 8px; }
+  .q small { font: 500 11.5px var(--mono); color: var(--muted); margin-left: 6px; }
+  .shots { display: flex; gap: 6px; margin: 0 0 10px; flex-wrap: wrap; }
+  .shots img { max-height: 120px; max-width: 100%; border-radius: 6px; border: 1px solid var(--line); cursor: zoom-in; }
+  .shots img.big { max-height: none; cursor: zoom-out; }
+  details.ocr { margin: 0 0 10px; font-size: 12.5px; color: var(--muted); }
+  details.ocr pre { white-space: pre-wrap; font: 12px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line);
+                    border-radius: 6px; padding: 6px 8px; max-height: 180px; overflow: auto; margin: 6px 0 0; }
+  .a ul, .a ol { margin: 6px 0 6px 20px; padding: 0; }
+  .a h4 { margin: 10px 0 4px; font-size: 14.5px; }
+  .a code { font: 12.5px var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; padding: 0 3px; }
+  .a pre.code { font: 12.5px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+                padding: 8px 10px; overflow-x: auto; white-space: pre; margin: 6px 0 8px; }
+  .a p { margin: 0 0 4px; }
+  .a.wait { color: var(--muted); }
+  .foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; color: var(--muted);
+          font: 11.5px var(--mono); }
+  .foot button { font-size: 12px; padding: 2px 8px; }
+  .empty { color: var(--muted); padding: 22px 4px; line-height: 1.9; }
+  kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px;
+        background: var(--panel); }
+  #drawer { border-top: 1px solid var(--line); background: var(--panel); max-height: 30vh; display: flex; flex-direction: column; }
+  #drawer.hidden #transcript { display: none; }
+  #drawer .bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; color: var(--muted); font-size: 12px;
+                 cursor: pointer; user-select: none; }
+  #transcript { overflow-y: auto; padding: 0 12px 8px; font-size: 13.5px; }
+  .line time { color: var(--muted); font: 11px var(--mono); margin-right: 6px; }
+  .partial { color: var(--partial); font-style: italic; }
+  form { display: flex; gap: 6px; padding: 8px 12px; border-top: 1px solid var(--line); background: var(--panel); }
+  form input { flex: 1; font: inherit; font-size: 14px; padding: 6px 9px; border-radius: 7px; border: 1px solid var(--line);
+               background: var(--bg); color: var(--ink); }
+  #err { color: var(--warn); font-size: 13px; padding: 6px 12px 0; }
+  #help { font-size: 12.5px; color: var(--muted); padding: 8px 12px; border-top: 1px solid var(--line); display: none;
+          background: var(--panel); line-height: 1.9; }
+  #help.show { display: block; }
+  @media (max-width: 560px) { aside { width: 150px; } }
+
+  #settings { position: fixed; inset: 0; background: var(--bg); z-index: 10; display: flex; flex-direction: column; }
+  #settings[hidden] { display: none; }
+  #settings .top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line);
+                   background: var(--panel); }
+  #settings .scroll { flex: 1; overflow-y: auto; padding: 4px 14px 14px; }
+  #settings h3 { font: 600 11px var(--mono); letter-spacing: .06em; color: var(--muted); text-transform: uppercase;
+                 margin: 16px 0 6px; }
+  .row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 7px; }
+  .row > span { font-size: 13px; color: var(--muted); }
+  .row input, .row select { font: inherit; font-size: 13.5px; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line);
+                            background: var(--panel); color: var(--ink); min-width: 0; width: 100%; }
+  .row input::placeholder { color: var(--partial); }
+  .hint { font-size: 12px; color: var(--muted); margin: -2px 0 8px 128px; line-height: 1.5; }
+  .keyrow { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 4px 0;
+            border-bottom: 1px solid var(--line); font-size: 13px; }
+  .keyrow button { min-width: 96px; font: 12px var(--mono); }
+  .keyrow button.rec { border-color: var(--rec); color: var(--rec); background: var(--rec-soft); }
+  .keyrow button.bad { border-color: var(--warn); color: var(--warn); }
+  .keyrow small { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
+  #setmsg { font-size: 12.5px; color: var(--muted); }
+  #setmsg.err { color: var(--warn); }
+  #setmsg.ok { color: var(--accent); }
+  @media (max-width: 480px) { .row { grid-template-columns: 1fr; gap: 3px; } .hint { margin-left: 0; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">Classmate</span>
+  <span class="dot" id="dot"></span>
+  <button class="primary" id="toggle">开始</button>
+  <button id="shotbtn" title="截取屏幕并回答">截图 <kbd data-k="screenshot">Tab</kbd></button>
+  <span class="chip" id="mode" title="切换自动回答范围 (M)">每段话</span>
+  <span class="chip" id="auto" title="自动回答开关">自动 ✓</span>
+  <span class="spacer"></span>
+  <label class="chip" id="opwrap" title="窗口透明度" hidden>◐ <input id="opacity" type="range" min="20" max="100" step="5" value="100"><span id="opval">100%</span></label>
+  <span class="chip" id="helpbtn" title="快捷键 (?)">?</span>
+  <span class="chip" id="setbtn" title="设置：模型、API key、快捷键">⚙</span>
+</header>
+<div id="err" hidden></div>
+<div class="body">
+  <aside id="aside">
+    <h2><span>问题</span><span id="count">0</span></h2>
+    <div id="list"><div class="noitems">还没有问题</div></div>
+  </aside>
+  <div class="right">
+    <div id="capture"><div class="label" id="caplabel"></div><span id="captext"></span> <span class="live" id="caplive"></span></div>
+    <main>
+      <div class="nav"><span id="pos">–</span><span>·</span><span><kbd data-k="prev">⇧↑</kbd><kbd data-k="next">⇧↓</kbd> 翻看</span>
+        <span class="newer" id="newer">有新问题 <span data-k="next">⇧↓</span></span></div>
+      <div id="cardwrap"><div class="empty"><span id="emptycap">按一下 <kbd data-k="capture">Ctrl</kbd> 开始录音，说的话会实时显示，再按一下立即回答</span>；按 <kbd data-k="screenshot">Tab</kbd> 截取屏幕并回答。</div></div>
+    </main>
+    <div id="help">
+      <kbd data-k="screenshot">Tab</kbd> 截取屏幕并单独回答 · <kbd data-k="region">⇧Tab</kbd> 框选区域截图<br>
+      <kbd data-k="capture">Ctrl</kbd> <span id="helpcap">按一下开始录音，再按一下立即回答</span> · <kbd data-k="append">`</kbd> 追加到当前问题<br>
+      <kbd data-k="answer_now">Space</kbd> 立即回答 · <kbd data-k="cancel">Esc</kbd> 放弃收录 · <kbd data-k="deep">D</kbd> 深度回答 · <kbd data-k="copy">C</kbd> 复制<br>
+      <kbd data-k="prev">⇧↑</kbd><kbd data-k="next">⇧↓</kbd> 上一题 / 下一题 · <kbd>↑↓←→</kbd> 移动窗口（<kbd>⌥</kbd> 微调）<br>
+      <kbd data-k="list">L</kbd> 显示/隐藏问题列表 · <kbd data-k="mode">M</kbd> 每段话 / 仅提问 · <kbd data-k="transcript">T</kbd> 转写 · <kbd data-k="ask">/</kbd> 打字提问 · <kbd data-k="settings">⌘,</kbd> 设置
+    </div>
+    <div id="drawer" class="hidden">
+      <div class="bar" id="drawerbar"><span id="drawerarrow">▸</span> 实时转写 <span class="meta" id="meta"></span></div>
+      <div id="transcript"></div>
+    </div>
+    <form id="askform"><input id="askinput" placeholder="打字提问…" autocomplete="off"><button>问</button></form>
+  </div>
+</div>
+<div id="settings" hidden>
+  <div class="top"><span class="brand">设置</span><span class="spacer"></span><span id="setmsg"></span>
+    <button id="setcancel">取消</button><button class="primary" id="setsave">保存</button></div>
+  <div class="scroll">
+    <h3>回答模型</h3>
+    <label class="row"><span>服务商</span><select id="f_llm"></select></label>
+    <label class="row"><span id="f_llm_keylabel">API key</span><input id="f_llm_key" type="password" autocomplete="off"></label>
+    <div class="hint" id="f_llm_hint"></div>
+    <label class="row"><span>普通回答模型</span><input id="f_llm_model" autocomplete="off" spellcheck="false"></label>
+    <label class="row"><span>深度回答模型</span><input id="f_llm_deep_model" autocomplete="off" spellcheck="false"></label>
+    <label class="row"><span>截图模型</span><input id="f_llm_vision_model" autocomplete="off" spellcheck="false"></label>
+    <div class="hint">截图题用这个模型（要能看图）；留空 = 和普通回答同一个模型。</div>
+    <label class="row"><span>接口地址</span><input id="f_llm_base_url" autocomplete="off" spellcheck="false"></label>
+    <label class="row"><span>截图发送方式</span><select id="f_vision">
+      <option value="auto">自动</option><option value="image">发送图片（模型看图）</option>
+      <option value="ocr">本机文字识别后发文字</option></select></label>
+    <label class="row"><span>偏好编程语言</span><input id="f_code_language" list="codelangs" autocomplete="off"
+      spellcheck="false" placeholder="跟随题目（留空）"></label>
+    <datalist id="codelangs"><option value="Python"><option value="Java"><option value="C++"><option value="C">
+      <option value="JavaScript"><option value="TypeScript"><option value="Go"><option value="Rust"><option value="C#">
+      <option value="R"><option value="MATLAB"><option value="SQL"></datalist>
+    <div class="hint">截图里的代码题、需要写代码时用这个语言；题目给了代码（找 bug、改错）时修正版保持原语言。留空 = 跟随题目。</div>
+    <label class="row"><span>回答风格</span><select id="f_answer_style">
+      <option value="concise">简洁</option><option value="detailed">详细</option></select></label>
+
+    <h3>语音识别</h3>
+    <label class="row"><span>服务商</span><select id="f_asr">
+      <option value="assemblyai">AssemblyAI（默认，中英混说）</option>
+      <option value="elevenlabs">ElevenLabs Scribe</option>
+      <option value="deepgram">Deepgram（英文，延迟最低）</option></select></label>
+    <label class="row"><span id="f_asr_keylabel">API key</span><input id="f_asr_key" type="password" autocomplete="off"></label>
+    <label class="row"><span>语言</span><select id="f_language">
+      <option value="auto">自动（支持中英混说）</option><option value="zh">中文</option><option value="en">English</option></select></label>
+
+    <h3>提问方式</h3>
+    <label class="row"><span>Ctrl 用法</span><select id="f_capture_style">
+      <option value="toggle">按一下开始录音，再按一下立即回答</option>
+      <option value="hold">按住收录，松开回答（回答后再按 = 补充）</option></select></label>
+
+    <h3>快捷键 <button id="keyreset" style="float:right">恢复默认</button></h3>
+    <div class="hint" style="margin-left:0">点右边的按钮，再按新按键或组合键（如 ⌃⌥S）。截图、框选、收录这三个键在其他软件里也生效；收录键可以只是一个修饰键（按住 Ctrl）。录框选键时按 ⌫ = 不用。方向键固定用来移动窗口；⌘Q、⌘W、⌘⇧3/4 这类系统快捷键会被 macOS 先拦走，别用。</div>
+    <div id="keylist"></div>
+    <div class="hint" style="margin:10px 0 0" id="setfiles"></div>
+  </div>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let ws, st = {}, step = 40;
+let keys = {screenshot: 'tab', region: 'shift+tab', capture: 'ctrl', append: '`', answer_now: 'space', cancel: 'escape', deep: 'd', copy: 'c', mode: 'm',
+            list: 'l', transcript: 't', ask: '/', help: '?', prev: 'shift+up', next: 'shift+down', settings: 'cmd+,'};
+const ACTIONS = {screenshot: '截图并回答', region: '框选区域截图', capture: '录音提问（用法见上）', append: '追加到当前问题（按一下开始，再按结束）', answer_now: '立即回答', cancel: '放弃收录',
+                 deep: '深度回答', copy: '复制答案', prev: '上一题', next: '下一题', mode: '切换 每段话 / 仅提问',
+                 list: '显示 / 隐藏问题列表', transcript: '展开实时转写', ask: '打字提问', help: '显示快捷键', settings: '打开设置'};
+const MOD = {Control: 'ctrl', Alt: 'alt', Shift: 'shift', Meta: 'cmd'};
+// Chinese input method: the key may report "Process" or a full-width character (· for `, 、 for /)
+const CODE_SYMBOLS = {Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+                      Semicolon: ';', Quote: "'", Comma: ',', Period: '.', Slash: '/'};
+const KEYNAMES = {' ': 'space', Escape: 'escape', Tab: 'tab', Enter: 'enter', Backspace: 'backspace', Delete: 'delete',
+                  ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right'};
+function keyName(e) {          // layout-independent for letters / digits (Option changes e.key on a Mac)
+  if (MOD[e.key]) return MOD[e.key];
+  const m = e.code.match(/^Key([A-Z])$/) || e.code.match(/^Digit(\d)$/);
+  if (m) return m[1].toLowerCase();
+  if ((e.key === 'Process' || /[^\x00-\x7f]/.test(e.key)) && CODE_SYMBOLS[e.code]) return CODE_SYMBOLS[e.code];
+  return KEYNAMES[e.key] || e.key.toLowerCase();
+}
+function combo(e) {            // 'ctrl+alt+shift+cmd+key'; Shift is part of symbols like '?' already
+  const k = keyName(e);
+  if (MOD[e.key]) return k;
+  const symbol = k.length === 1 && !/[a-z0-9]/.test(k);
+  return (e.ctrlKey ? 'ctrl+' : '') + (e.altKey ? 'alt+' : '') + (e.shiftKey && !symbol ? 'shift+' : '') + (e.metaKey ? 'cmd+' : '') + k;
+}
+const PRETTY = {ctrl: 'Ctrl', alt: '⌥', shift: '⇧', cmd: '⌘', space: 'Space', escape: 'Esc', tab: 'Tab', enter: '↩',
+                backspace: '⌫', delete: '⌦', up: '↑', down: '↓', left: '←', right: '→'};
+const ORDER = ['ctrl', 'alt', 'shift', 'cmd'];
+const splitKey = (c) => { const parts = c.split(/\+(?=.)/); return {mods: parts.slice(0, -1), main: parts[parts.length - 1]}; };
+const withShift = (c) => { const {mods, main} = splitKey(c);
+  return mods.includes('shift') || ORDER.includes(main) ? '' : [...ORDER.filter(m => m === 'shift' || mods.includes(m)), main].join('+'); };
+const pretty = (c) => c.split(/\+(?=.)/).map(p => PRETTY[p] || (p.length === 1 ? p.toUpperCase() : p.toUpperCase())).join('');
+function applyKeys() {
+  document.querySelectorAll('[data-k]').forEach(el => {
+    const a = el.dataset.k;
+    el.textContent = keys[a] ? pretty(keys[a]) : '—';
+  });
+  $('askinput').placeholder = `打字提问（${pretty(keys.ask)}）…`;
+  $('helpbtn').title = `快捷键 (${pretty(keys.help)})`;
+  $('setbtn').title = `设置：模型、API key、快捷键 (${pretty(keys.settings)})`;
+}
+const qa = new Map();          // id -> {question, title, source, deep, text, done, model, images, error}
+let order = [], view = -1;     // view: index into order, -1 = follow latest
+let partialEl = null, capState = {text: '', hold: false, armed: false, pending: ''}, livePartial = '';
+
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function inline(t) {
+  return t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+}
+function render(md) {
+  // small Markdown subset: headings, bullet / numbered lists, fenced code, inline code, bold
+  const parts = md.split(/```/);
+  let html = '';
+  parts.forEach((part, k) => {
+    if (k % 2) {                                   // fenced code (first line may be a language tag)
+      const body = part.replace(/^[a-zA-Z0-9+#_-]*\n/, '');
+      html += `<pre class="code">${esc(body.replace(/\n$/, ''))}</pre>`;
+      return;
+    }
+    let list = '';
+    const close = () => { if (list) { html += `</${list}>`; list = ''; } };
+    for (const raw of esc(part).split('\n')) {
+      const l = raw.trim();
+      let m;
+      if ((m = l.match(/^#{1,4}\s+(.*)/))) { close(); html += `<h4>${inline(m[1])}</h4>`; }
+      else if ((m = l.match(/^[-*•]\s+(.*)/))) { if (list !== 'ul') { close(); html += '<ul>'; list = 'ul'; } html += `<li>${inline(m[1])}</li>`; }
+      else if ((m = l.match(/^(\d+)[.)、]\s+(.*)/))) { if (list !== 'ol') { close(); html += `<ol start="${m[1]}">`; list = 'ol'; } html += `<li>${inline(m[2])}</li>`; }
+      else { close(); if (l) html += `<p>${inline(l)}</p>`; }
+    }
+    close();
+  });
+  return html;
+}
+const plain = (md) => md.replace(/```[\s\S]*?```/g, ' ').replace(/\*\*|`|^#+\s*/gm, '').replace(/^[-*•]\s+/gm, '').replace(/题目 \/ Question:|题目：/g, '').replace(/\s+/g, ' ').trim();
+const clock = (t) => new Date(t * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
+const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
+function showError(m) { const e = $('err'); e.textContent = m; e.hidden = false; clearTimeout(showError.t); showError.t = setTimeout(() => e.hidden = true, 8000); }
+const currentIndex = () => view < 0 ? order.length - 1 : view;
+
+function drawList() {
+  const list = $('list'), cur = currentIndex();
+  $('count').textContent = order.length;
+  if (!order.length) { list.innerHTML = '<div class="noitems">还没有问题</div>'; return; }
+  list.innerHTML = order.map((id, i) => {
+    const q = qa.get(id), preview = q.error ? '出错' : (q.text ? plain(q.text) : (q.done ? '' : '<span class="live">生成中…</span>'));
+    return `<div class="item ${i === cur ? 'sel' : ''} ${q.images.length ? 'shot' : ''}" data-i="${i}">
+      <div class="t"><span class="n">${i + 1}</span><span class="s">${esc(q.title)}</span></div>
+      <div class="p">${q.text ? esc(preview) : preview}</div></div>`;
+  }).join('');
+  list.querySelector('.sel')?.scrollIntoView({block: 'nearest'});
+}
+$('list').onclick = (e) => { const it = e.target.closest('.item'); if (!it) return;
+  const i = +it.dataset.i; view = i === order.length - 1 ? -1 : i; draw(); };
+
+function drawCard() {
+  const i = currentIndex();
+  if (i < 0) return;
+  const id = order[i], q = qa.get(id);
+  $('pos').textContent = `Q${i + 1} / ${order.length}`;
+  $('newer').classList.toggle('show', view >= 0 && view < order.length - 1);
+  const foot = q.done ? `<span>首字 ${(q.done.first_token_ms/1000).toFixed(1)}s · 完成 ${(q.done.total_ms/1000).toFixed(1)}s</span>
+      <button onclick="deep(${id})">深度回答 D</button><button onclick="copy(${id})">复制 C</button>`
+    : (q.error ? `<span>出错：${esc(q.error)}</span>` : `<span>${esc(q.model)} · 生成中…</span>`);
+  const shots = q.images.length ? `<div class="shots">${q.images.map(u => `<img src="${u}" onclick="this.classList.toggle('big')">`).join('')}</div>` : '';
+  const heading = q.images.length && q.question === q.title ? '' : esc(q.question);
+  $('cardwrap').innerHTML = `<div class="card ${i === order.length - 1 ? 'latest' : ''}">
+    <div class="q">${q.images.length ? esc(q.title) + (heading ? ' · ' : '') : ''}${heading}<small>${q.source}${q.deep ? ' · deep' : ''}</small></div>
+    ${shots}${q.ocr ? `<details class="ocr"><summary>识别到的文字（发给模型的内容）</summary><pre>${esc(q.ocr)}</pre></details>` : ''}<div class="a ${q.text ? '' : 'wait'}">${q.text ? render(q.text) : '…'}</div>
+    <div class="foot">${foot}</div></div>`;
+}
+function draw() { drawCard(); drawList(); }
+function deep(id) { send({cmd: 'deep', id}); view = -1; }
+function copy(id) { navigator.clipboard?.writeText(qa.get(id).text); }
+
+function drawCapture() {
+  const c = $('capture'), active = capState.hold || capState.armed || capState.text || capState.pending;
+  c.classList.toggle('show', !!active);
+  c.classList.toggle('rec', capState.hold);
+  const n = (id) => order.indexOf(id) + 1, key = pretty(keys.capture);
+  let label = '';
+  if (capState.hold && capState.style === 'toggle') label = capState.target
+    ? `● 录音中 · 追加到 Q${n(capState.target)} · 再按 ${pretty(keys.append)} 或 ${key} 结束并重新回答`
+    : `● 录音中 · 再按 ${key} 结束并回答 · Esc 放弃`;
+  else if (capState.hold) label = capState.target ? `● 收录中 · 补充到 Q${n(capState.target)}` : `● 收录中 · 松开 ${key} 生成`;
+  else if (capState.armed) label = capState.target ? `等这句说完 → 补充到 Q${n(capState.target)}` : '等这句说完 → 生成';
+  else if (capState.pending) label = '排队：当前回答完成后作为下一题';
+  $('caplabel').textContent = label;
+  $('captext').textContent = capState.text || capState.pending || '';
+  const live = $('caplive');
+  live.textContent = (capState.hold || capState.armed) ? livePartial : '';
+  live.dataset.idle = capState.hold && !capState.text ? '正在听…' : '';
+  c.scrollTop = c.scrollHeight;                // keep the newest words in view
+}
+
+function connect() {
+  ws = new WebSocket(`ws://${location.host}/ws`);
+  ws.onmessage = (ev) => handle(JSON.parse(ev.data));
+  ws.onopen = () => { if (!$('settings').hidden) send({cmd: 'get_config'}); };
+  ws.onclose = () => { $('meta').textContent = '连接断开，重连中…'; setTimeout(connect, 1000); };
+}
+
+function handle(m) {
+  if (m.type === 'status') {
+    st = m; if (m.move_step) step = m.move_step;
+    $('dot').classList.toggle('on', m.listening);
+    $('toggle').textContent = m.listening ? '停止' : '开始';
+    $('mode').textContent = m.mode === 'every_turn' ? '每段话' : '仅提问';
+    $('auto').textContent = m.auto ? '自动 ✓' : '自动 ✗';
+    $('meta').textContent = `${m.asr} · ${m.model}` + (m.notes.length ? ` · 课件 ${m.notes.length}` : '');
+    if (m.keys) { keys = m.keys; applyKeys(); }
+    $('opwrap').hidden = !m.native;
+    const toggle = m.capture_style !== 'hold';
+    // toggle style: Ctrl alone opens and closes the microphone, so no start button or auto-answer chips
+    $('toggle').hidden = $('mode').hidden = $('auto').hidden = toggle;
+    $('emptycap').innerHTML = toggle ? `按一下 <kbd>${esc(pretty(keys.capture))}</kbd> 开始录音，说的话会实时显示；再按一下结束并立即回答`
+                                     : `点"开始"后，老师说的话会自动生成回答。<br>按住 <kbd>${esc(pretty(keys.capture))}</kbd> 收录长问题，松开生成`;
+    $('helpcap').textContent = toggle ? '按一下开始录音，再按一下立即回答' : '按住收录，松开生成；回答后再按 = 补充到当前问题';                 // a browser tab cannot change its own opacity
+    if (m.opacity && document.activeElement !== $('opacity')) showOpacity(Math.round(m.opacity * 100));
+    if (m.missing_keys && m.missing_keys.length && !handle.askedKeys) {
+      handle.askedKeys = true; openSettings();
+      setMsg(`请先填写：${m.missing_keys.join('、')}`, 'err');
+    }
+  } else if (m.type === 'partial' || m.type === 'final') {
+    const tr = $('transcript');
+    if (!partialEl) { partialEl = document.createElement('div'); partialEl.className = 'line partial'; tr.appendChild(partialEl); }
+    if (m.type === 'partial') { partialEl.textContent = m.text; livePartial = m.text; }
+    else {
+      const line = document.createElement('div'); line.className = 'line';
+      line.innerHTML = `<time>${clock(m.t)}</time>${esc(m.text)}`;
+      tr.insertBefore(line, partialEl); partialEl.textContent = ''; livePartial = '';
+    }
+    tr.scrollTop = tr.scrollHeight; drawCapture();
+  } else if (m.type === 'capture') {
+    capState = m; drawCapture();
+  } else if (m.type === 'question') {
+    const prev = qa.get(m.id);
+    qa.set(m.id, {question: m.text, title: m.title || m.text, source: m.replace ? m.source + ' · 已补充' : m.source,
+                  deep: m.deep, model: m.model, images: m.images || [], text: '', done: null});
+    if (!prev) order.push(m.id);
+    draw();
+  } else if (m.type === 'answer_delta') {
+    const q = qa.get(m.id); if (!q) return; q.text += m.text;
+    if (order[currentIndex()] === m.id) drawCard();
+    clearTimeout(handle.t); handle.t = setTimeout(drawList, 150);
+  } else if (m.type === 'ocr') {
+    const q = qa.get(m.id); if (!q) return; q.ocr = m.text;
+    if (order[currentIndex()] === m.id) drawCard();
+  } else if (m.type === 'answer_reset') {        // came out in English: the Chinese answer replaces it
+    const q = qa.get(m.id); if (!q) return; q.text = '';
+    if (order[currentIndex()] === m.id) drawCard();
+    drawList();
+  } else if (m.type === 'answer_done') {
+    const q = qa.get(m.id); if (!q) return; q.done = m; draw();
+  } else if (m.type === 'config') {
+    cfg = m; if (!$('settings').hidden && !cfgDirty) fillSettings();
+  } else if (m.type === 'config_saved') {
+    if (saving) { saving = false; cfgDirty = false; setMsg('已保存', 'ok'); setTimeout(closeSettings, 600); }
+  } else if (m.type === 'model_check') {
+    if (m.ok) setMsg(`已保存 · ${m.model} 连接正常`, 'ok');
+    else { showError(`模型测试失败：${m.message}`); setMsg(`模型测试失败：${m.message}`, 'err'); }
+  } else if (m.type === 'error') {
+    showError(m.message);
+    if (saving) { saving = false; setMsg(m.message, 'err'); }
+    if (m.id && qa.get(m.id)) { qa.get(m.id).error = m.message; draw(); }
+  }
+}
+
+function browse(delta) {
+  if (!order.length) return;
+  const i = Math.max(0, Math.min(order.length - 1, currentIndex() + delta));
+  view = (i === order.length - 1) ? -1 : i;
+  draw();
+}
+
+$('toggle').onclick = () => send({cmd: st.listening ? 'stop' : 'start'});
+$('shotbtn').onclick = () => { send({cmd: 'screenshot'}); view = -1; };
+$('mode').onclick = () => send({cmd: 'mode', value: st.mode === 'every_turn' ? 'questions' : 'every_turn'});
+$('auto').onclick = () => send({cmd: 'auto', value: !st.auto});
+$('newer').onclick = () => { view = -1; draw(); };
+$('helpbtn').onclick = () => $('help').classList.toggle('show');
+$('drawerbar').onclick = () => { const d = $('drawer'); d.classList.toggle('hidden'); $('drawerarrow').textContent = d.classList.contains('hidden') ? '▸' : '▾'; };
+$('askform').onsubmit = (e) => { e.preventDefault(); const v = $('askinput').value.trim(); if (v) { send({cmd: 'ask', text: v}); $('askinput').value = ''; view = -1; } $('askinput').blur(); };
+
+// ---------- window opacity ----------
+function showOpacity(v) { $('opacity').value = v; $('opval').textContent = v + '%'; }
+$('opacity').oninput = (e) => { showOpacity(+e.target.value); send({cmd: 'opacity', value: e.target.value / 100}); };
+$('opacity').onchange = (e) => { send({cmd: 'opacity', value: e.target.value / 100, save: true}); e.target.blur(); };
+
+// ---------- settings panel ----------
+let cfg = null, draft = null, recording = null, saving = false, cfgDirty = false;
+const FIELDS = ['llm', 'llm_model', 'llm_deep_model', 'llm_vision_model', 'llm_base_url', 'vision', 'asr', 'language',
+                'answer_style', 'code_language', 'capture_style'];
+function setMsg(t, cls = '') { const e = $('setmsg'); e.textContent = t; e.className = cls; }
+function openSettings() { $('settings').hidden = false; cfgDirty = false; setMsg(''); send({cmd: 'get_config'}); if (cfg) fillSettings(); }
+function closeSettings() { $('settings').hidden = true; recording = null; }
+function fillSettings() {
+  const v = cfg.values;
+  $('f_llm').innerHTML = Object.entries(cfg.providers).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('');
+  FIELDS.forEach(f => {
+    const el = $('f_' + f), val = v[f] || '';
+    if (el.tagName === 'SELECT' && val && ![...el.options].some(o => o.value === val)) el.add(new Option(val, val));
+    el.value = val;
+  });
+  draft = {keys: {...v.keys}};
+  $('f_llm_key').value = $('f_asr_key').value = '';
+  providerChanged(false); asrChanged();
+  drawKeys();
+  $('setfiles').textContent = `保存到 ${cfg.settings_file}；API key 保存到 ${cfg.env_file}`;
+}
+function providerChanged(swap = true) {
+  const name = $('f_llm').value, p = cfg.providers[name], old = cfg.providers[providerChanged.last] || {};
+  if (swap) {                                   // switch the model fields to the new provider's defaults
+    [['llm_model', 'model'], ['llm_deep_model', 'deep_model'], ['llm_vision_model', 'vision_model'], ['llm_base_url', 'base_url']]
+      .forEach(([f, k]) => { const el = $('f_' + f); if (!el.value || el.value === (old[k] || '')) el.value = p[k] || ''; });
+  }
+  providerChanged.last = name;
+  $('f_llm_model').placeholder = p.model || '必填，例如 openai/gpt-oss-120b';
+  $('f_llm_deep_model').placeholder = p.deep_model || '留空 = 同普通回答模型';
+  $('f_llm_vision_model').placeholder = p.vision_model || '留空 = 同普通回答模型';
+  $('f_llm_base_url').placeholder = p.base_url || '例如 https://api.groq.com/openai/v1';
+  keyField('f_llm_key', 'f_llm_keylabel', p.env);
+  const hints = {
+    doubao: '在 火山方舟控制台 → API Key 管理 创建 key；模型名用控制台“模型列表”里的 Model ID（如 doubao-seed-1-6-251015），也可以填推理接入点 ep-xxxx。',
+    qwen: '在 阿里云百炼控制台 创建 API Key。普通回答 qwen-flash 最快，深度回答 qwen-plus（开启思考），截图用 qwen3-vl-plus 看图。国际站把接口地址改成 https://dashscope-intl.aliyuncs.com/compatible-mode/v1。',
+    deepseek: 'platform.deepseek.com 申请 key。DeepSeek 看不了图片，截图会先在本机识别文字再发送。',
+    anthropic: 'console.anthropic.com 申请 key。',
+    openai: '任意 OpenAI 兼容接口：填接口地址和模型名。'};
+  $('f_llm_hint').textContent = hints[name] || '';
+}
+function asrChanged() { keyField('f_asr_key', 'f_asr_keylabel', cfg.asr_providers[$('f_asr').value]); }
+function keyField(input, label, env) {
+  const cur = cfg.api_keys[env];
+  $(label).textContent = 'API key';
+  $(label).title = $(input).title = env;
+  $(input).dataset.env = env;
+  $(input).placeholder = cur ? `已设置 ${cur}，留空不修改` : `未设置（${env}），粘贴 key`;
+}
+function drawKeys() {
+  const seen = {};
+  Object.entries(draft.keys).forEach(([a, k]) => { if (k) (seen[k] = seen[k] || []).push(a); });
+  $('keylist').innerHTML = Object.keys(ACTIONS).map(a => {
+    const k = draft.keys[a], dup = k && seen[k].length > 1, glob = ['screenshot', 'region', 'capture', 'append'].includes(a);
+    return `<div class="keyrow"><span>${ACTIONS[a]}${glob ? '<small>全局</small>' : ''}</span>
+      <button data-a="${a}" class="${recording === a ? 'rec' : ''} ${dup ? 'bad' : ''}" title="${dup ? '和其他快捷键冲突' : ''}">
+      ${recording === a ? '请按键…' : (k ? esc(pretty(k)) : '不用')}</button></div>`;
+  }).join('');
+}
+$('keylist').onclick = (e) => { const b = e.target.closest('button'); if (!b) return;
+  recording = recording === b.dataset.a ? null : b.dataset.a; drawKeys(); };
+$('keyreset').onclick = () => { draft.keys = {...cfg.default_keys}; recording = null; cfgDirty = true; drawKeys(); };
+let recMod = null;             // capture key: a lone modifier is recorded when it is let go
+function recordKey(e) {
+  e.preventDefault(); e.stopPropagation();
+  const k = keyName(e);
+  if (MOD[e.key]) { if (recording === 'capture' && !e.repeat) recMod = k; return; }   // wait for the rest
+  recMod = null;
+  if (recording === 'region' && (k === 'backspace' || k === 'delete')) setKey('');
+  else setKey(combo(e));
+}
+function recordKeyUp(e) {
+  if (!recording || !MOD[e.key] || recMod !== keyName(e)) return;
+  recMod = null;
+  if (keyName(e) === 'shift') { setMsg('收录键不能单独用 Shift，可以用 Ctrl、⌥、⌘ 或组合键', 'err'); return; }
+  setKey(keyName(e));
+}
+function setKey(c) {
+  const old = draft.keys[recording];
+  draft.keys[recording] = c;
+  if (recording === 'screenshot' && draft.keys.region === withShift(old)) draft.keys.region = withShift(c);  // keep ⇧ + 截图键
+  recording = null; cfgDirty = true; setMsg(''); drawKeys();
+}
+$('f_llm').onchange = () => { cfgDirty = true; providerChanged(); };
+$('f_asr').onchange = () => { cfgDirty = true; asrChanged(); };
+$('settings').addEventListener('input', () => { cfgDirty = true; });
+$('setbtn').onclick = openSettings;
+$('setcancel').onclick = closeSettings;
+$('setsave').onclick = () => {
+  const values = {keys: draft.keys};
+  FIELDS.forEach(f => { values[f] = $('f_' + f).value.trim(); });
+  const api_keys = {};
+  ['f_llm_key', 'f_asr_key'].forEach(id => { const v = $(id).value.trim(); if (v) api_keys[$(id).dataset.env] = v; });
+  if (values.llm === 'openai' && !values.llm_model) { setMsg('OpenAI 兼容接口需要填模型名', 'err'); return; }
+  saving = true; setMsg('保存中…');
+  send({cmd: 'save_config', values, api_keys});
+};
+
+// ---------- keyboard ----------
+const ARROWS = {ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0]};
+const RUN = {
+  answer_now: () => { send({cmd: 'answer_now'}); view = -1; },
+  cancel: () => send({cmd: 'cancel'}),
+  deep: () => { if (order.length) deep(order[currentIndex()]); },
+  copy: () => { if (order.length) copy(order[currentIndex()]); },
+  mode: () => $('mode').click(),
+  transcript: () => $('drawerbar').click(),
+  list: () => $('aside').classList.toggle('hidden'),
+  ask: () => $('askinput').focus(),
+  help: () => $('helpbtn').click(),
+  prev: () => browse(-1),
+  next: () => browse(1),
+  settings: openSettings,
+};
+const capLone = () => ORDER.includes(keys.capture);       // capture key is a single modifier (default Ctrl)
+let capHeld = false, capUsed = false;     // capUsed: another key went down meanwhile (Ctrl+C is not a tap)
+document.addEventListener('keydown', (e) => {
+  if (!$('settings').hidden) {
+    if (recording) recordKey(e);
+    else if (e.key === 'Escape') closeSettings();
+    return;
+  }
+  const typing = document.activeElement === $('askinput'), k = keyName(e), c = combo(e);
+  if ((capLone() ? k === keys.capture : c === keys.capture) && !(typing && !MOD[e.key])) {
+    if (!MOD[e.key]) e.preventDefault();
+    if (!capHeld) { capHeld = true; capUsed = false; send({cmd: 'ctrl', down: true}); }
+    return;
+  }
+  if (capHeld) capUsed = true;
+  if (typing) { if (e.key === 'Escape') document.activeElement.blur(); return; }
+  if (c === keys.append) { e.preventDefault(); if (!e.repeat) { send({cmd: 'append'}); view = -1; } return; }
+  if (c === keys.screenshot || (keys.region && c === keys.region)) {
+    e.preventDefault(); if (!e.repeat) { send({cmd: 'screenshot', region: c === keys.region}); view = -1; } return;
+  }
+  const action = Object.keys(RUN).find(a => keys[a] === c);
+  if (action) { e.preventDefault(); RUN[action](); return; }
+  if (ARROWS[e.key] && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
+    e.preventDefault();
+    const s = e.altKey ? 10 : step, [dx, dy] = ARROWS[e.key];
+    send({cmd: 'move', dx: dx * s, dy: dy * s});
+  }
+});
+document.addEventListener('keyup', (e) => {
+  if (!$('settings').hidden) { recordKeyUp(e); return; }
+  const {mods, main} = splitKey(keys.capture), k = keyName(e);
+  if (capHeld && (k === main || mods.includes(k))) { capHeld = false; send({cmd: 'ctrl', down: false, tap: !capUsed}); }
+});
+applyKeys();
+connect();
+if (location.hash === '#settings') openSettings();
+</script>
+</body>
+</html>

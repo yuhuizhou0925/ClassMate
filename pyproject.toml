@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "classmate"
+version = "0.1.0"
+description = "Live lecture transcription with streaming answer drafts for questions asked in class"
+requires-python = ">=3.10"
+dependencies = [
+  "aiohttp>=3.9", "websockets>=13", "sounddevice>=0.4.6", "numpy>=1.24",
+  "anthropic>=0.40", "openai>=1.40", "PyYAML>=6", "pypdf>=4", "python-pptx>=0.6.21",
+  "pywebview>=5", "pynput>=1.7", "Pillow>=10",
+  "pyobjc-framework-Vision>=10; sys_platform == 'darwin'",
+  "pyobjc-framework-Quartz>=10; sys_platform == 'darwin'",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+classmate = "classmate.__main__:main"
+
+[tool.setuptools]
+packages = ["classmate", "classmate.asr"]
+
+[tool.setuptools.package-data]
+classmate = ["ui/*.html"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

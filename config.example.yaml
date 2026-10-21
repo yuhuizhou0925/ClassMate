@@ -1,0 +1,65 @@
+# Copy to config.yaml and edit. Command-line flags override these values.
+
+# --- speech recognition ---
+asr: assemblyai            # assemblyai (default, accurate, zh + code-switching) | elevenlabs | deepgram (lowest latency, English)
+asr_model: null            # null = provider default (universal-3-6-pro / scribe_v2_realtime / nova-3)
+language: auto             # auto | en | zh
+device: null               # null = default mic; "BlackHole" to capture Zoom/Teams audio
+keyterms:                  # course vocabulary improves recognition of technical terms
+  - convolutional
+  - backpropagation
+  - homography
+
+# --- answers ---
+# Everything in this file can also be changed in the app: ⚙ settings (saved to settings.yaml, which overrides this file).
+# llm: deepseek            # anthropic | deepseek | doubao | qwen | openai. Leave unset to use whichever key is in .env
+# llm_model / llm_deep_model / llm_vision_model: empty = provider default
+#   anthropic: claude-haiku-5-5 / claude-sonnet-5-5                       key ANTHROPIC_API_KEY
+#   deepseek:  deepseek-flash / deepseek-v4-pro (screenshots via OCR)     key DEEPSEEK_API_KEY
+#   doubao:    doubao-seed-1-6-flash-250828 / doubao-seed-1-6-251015      key ARK_API_KEY
+#              (any Model ID from the 火山方舟 model list, or an endpoint id ep-xxxx)
+#   qwen:      qwen-flash / qwen-plus, screenshots qwen3-vl-plus          key DASHSCOPE_API_KEY
+#              (international site: llm_base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1)
+# Example for Groq (very fast open models):
+# llm: openai
+# llm_base_url: https://api.groq.com/openai/v1
+# llm_model: openai/gpt-oss-120b
+max_tokens: 400
+answer_style: concise      # concise | detailed
+code_language: ""          # e.g. Python / Java / C++: language for code in answers; empty = follow the question
+auto_answer: true
+min_turn_chars: 6          # ignore short fillers ("嗯", "是的", "okay") in every_turn mode
+capture_mode: every_turn   # every_turn: answer after every pause | questions: only turns detected as questions
+history_answers: 6         # earlier Q&A pairs given to the model, so follow-ups build on previous answers
+context_minutes: 8
+# notes: [~/Documents/COMP90086/week10]   # default: everything in the classmate/notes folder
+notes_max_chars: 60000
+
+# --- window & keys ---
+# keys:                    # custom shortcuts (only list the ones you change); modifiers: ctrl / alt / shift / cmd
+#   screenshot: ctrl+alt+s # global; a single key or a combination
+#   region: ctrl+alt+shift+s   # global; select a region (left out = Shift + the screenshot key; "" = none)
+#   capture: alt           # global; hold to capture a long question (default ctrl; also e.g. alt+space)
+#   answer_now: space
+#   cancel: escape
+#   deep: d
+#   copy: c
+#   prev: shift+up
+#   next: shift+down
+#   mode: m
+#   list: l
+#   transcript: t
+#   ask: /
+#   help: "?"
+#   settings: cmd+,
+window: native             # native movable window (arrow keys) | browser
+window_size: [760, 620]
+move_step: 40              # pixels per arrow press; Option+arrow moves 10
+global_ctrl: true          # capture key works from any app (needs Accessibility + Input Monitoring permission)
+capture_style: toggle      # toggle: tap Ctrl to start recording, tap again to answer | hold: hold Ctrl, release to answer
+
+# --- screenshots ---
+screenshot_key: tab        # same as keys.screenshot; e.g. f5 to avoid clashing with Tab
+screenshot_target: window  # window: frontmost app window, never Classmate itself | screen: the whole main display
+global_screenshot: true    # works in any app (Tab still also types a tab there)
+vision: auto               # auto: send the image (Claude, Doubao, Qwen) or on-device OCR text (DeepSeek) | image | ocr
