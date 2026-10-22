@@ -24,6 +24,12 @@ from classmate import license as licensing
 REAL_LICENSE_LOAD = licensing.load
 
 
+def use_key(monkeypatch, name, value):
+    """A key the user entered in ClassMate (the only place keys are read from)."""
+    from classmate import config
+    monkeypatch.setitem(config.STORED_KEYS, name, value)
+
+
 @pytest.fixture(autouse=True)
 def isolated_config(tmp_path, monkeypatch):
     """Keep the real .env, settings.yaml and API keys of this machine out of the tests."""
@@ -35,8 +41,8 @@ def isolated_config(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ENV_FILE", None)
     monkeypatch.setattr(config, "NOTES_DIR", home / "notes")
     monkeypatch.chdir(home)
-    for env in set(Settings.API_ENV.values()):
-        monkeypatch.delenv(env, raising=False)
+    monkeypatch.setattr(config, "STORED_KEYS", {})
+    monkeypatch.setattr(config, "KEY_SOURCES", {})
     from classmate import license as licensing     # most tests run as an authorized user
     monkeypatch.setattr(licensing, "load", lambda now=None: licensing.License("user", None, "test"))
 
@@ -84,7 +90,7 @@ def settings(**kw):
 
 
 def test_assemblyai_parse_and_url(monkeypatch):
-    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "k")
+    use_key(monkeypatch, "ASSEMBLYAI_API_KEY", "k")
     asr = AssemblyAI(settings(language="zh", keyterms=["homography"]))
     q = parse_qs(urlparse(asr.build_url()).query)
     assert q["speech_model"] == ["universal-3-6-pro"] and q["language_codes"] == ["zh"]
@@ -103,7 +109,7 @@ def test_assemblyai_parse_and_url(monkeypatch):
 
 
 def test_elevenlabs_parse(monkeypatch):
-    monkeypatch.setenv("ELEVENLABS_API_KEY", "k")
+    use_key(monkeypatch, "ELEVENLABS_API_KEY", "k")
     asr = ElevenLabs(settings())
     assert "language_code" not in asr.build_url() and "pcm_16000" in asr.build_url()
     assert asr.parse({"message_type": "partial_transcript", "text": "why"})[0].final is False
@@ -113,7 +119,7 @@ def test_elevenlabs_parse(monkeypatch):
 
 
 def test_deepgram_assembles_segments(monkeypatch):
-    monkeypatch.setenv("DEEPGRAM_API_KEY", "k")
+    use_key(monkeypatch, "DEEPGRAM_API_KEY", "k")
     asr = Deepgram(settings())
     assert asr.headers()["Authorization"] == "Token k"
     r = lambda text, final, speech_final=False: {"type": "Results", "is_final": final, "speech_final": speech_final,
@@ -129,7 +135,7 @@ def test_deepgram_assembles_segments(monkeypatch):
 
 async def test_streaming_loop_against_fake_server(monkeypatch):
     """Full websocket loop: audio frames out, Turn events in, Terminate at the end."""
-    monkeypatch.setenv("ASSEMBLYAI_API_KEY", "secret")
+    use_key(monkeypatch, "ASSEMBLYAI_API_KEY", "secret")
     received = {"bytes": 0, "terminate": False, "auth": None}
 
     async def handler(ws):
@@ -433,7 +439,7 @@ async def test_default_mode_answers_every_turn(tmp_path):
 
 
 async def test_deepseek_provider_uses_openai_client_without_thinking(monkeypatch, tmp_path):
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "ds-key")
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "ds-key")
     (tmp_path / "c.yaml").write_text("llm: deepseek\n")
     s = load_settings(str(tmp_path / "c.yaml"))
     assert (s.llm_model, s.llm_deep_model, s.llm_base_url) == ("deepseek-flash", "deepseek-v4-pro",
@@ -466,16 +472,28 @@ async def test_deepseek_provider_uses_openai_client_without_thinking(monkeypatch
     assert str(client.base_url).startswith("https://api.deepseek.com") and client.api_key == "ds-key"
 
 
-def test_dotenv_overrides_shell_and_last_duplicate_wins(tmp_path, monkeypatch):
-    from classmate.config import load_dotenv, KEY_SOURCES
+def test_only_keys_entered_in_classmate_are_used(tmp_path, monkeypatch):
+    """Keys that other tools put in the shell environment (or another project's .env in the current folder)
+    must not be picked up: the user enters ClassMate's keys themselves."""
+    from classmate import config
+    from classmate.config import KEY_SOURCES, load_dotenv
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-someone-elses-key-0000")
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-old-shell-key-0000")
-    env = tmp_path / ".env"
-    env.write_text('﻿DEEPSEEK_API_KEY=sk-first-key-1111\nexport DEEPSEEK_API_KEY = "sk-real​-key-ed22"\n')
-    load_dotenv(str(env))
-    import os
-    assert os.environ["DEEPSEEK_API_KEY"] == "sk-real-key-ed22"
+    other = tmp_path / "other_project"
+    other.mkdir()
+    (other / ".env").write_text("ANTHROPIC_API_KEY=sk-other-project-1111\n")
+    monkeypatch.chdir(other)
+    s = config.load_settings(None)
+    assert not config.has_key("openai") and not config.has_key("deepseek") and not config.has_key("anthropic")
+    with pytest.raises(RuntimeError, match="设置里填写"):
+        s.key(s.llm)
+    env = config.APP_DIR / ".env"                       # ClassMate's own .env (what the settings panel writes)
+    env.write_text('\ufeffDEEPSEEK_API_KEY=sk-first-key-1111\nexport DEEPSEEK_API_KEY = "sk-real\u200b-key-ed22"\n')
+    load_dotenv()
+    assert Settings(llm="deepseek").key("deepseek") == "sk-real-key-ed22"     # last line wins, cleaned
     assert KEY_SOURCES["DEEPSEEK_API_KEY"] == str(env)
-    assert Settings(llm="deepseek").key("deepseek") == "sk-real-key-ed22"
+    assert config.auto_llm() == "deepseek"              # the shell's OPENAI_API_KEY plays no part
+
 
 
 # ---------------- screenshots ----------------
@@ -561,7 +579,7 @@ async def test_image_content_and_ocr_paths(tmp_path, monkeypatch):
         async def __aexit__(self, *a):
             return False
 
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    use_key(monkeypatch, "ANTHROPIC_API_KEY", "x")
     a = llm_mod.Answerer(Settings(llm="anthropic"))
     a._anthropic = type("C", (), {"messages": type("M", (), {"stream": lambda self, **kw: Stream(**kw)})()})()
     out = "".join([t async for t in a.stream("", "", "", images=[img])])
@@ -570,7 +588,7 @@ async def test_image_content_and_ocr_paths(tmp_path, monkeypatch):
     assert content[-1]["type"] == "text"
     # DeepSeek: on-device OCR text instead of the picture
     monkeypatch.setattr(shot_mod, "ocr", lambda p, languages=None: "Q3. Which model? (b) homography")
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "k")
     ds = llm_mod.Answerer(load_settings(None, llm="deepseek"))
     seen = []
 
@@ -664,7 +682,7 @@ def test_screenshot_prompt_asks_for_extraction_and_full_answer():
 
 async def test_screenshot_answers_get_long_token_budget(monkeypatch, tmp_path):
     from classmate.llm import Answerer
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "k")
     a = Answerer(load_settings(None, llm="deepseek", vision="ocr"))
     seen = []
 
@@ -683,13 +701,10 @@ async def test_screenshot_answers_get_long_token_budget(monkeypatch, tmp_path):
 
 def test_auto_llm_and_notes_folder(monkeypatch, tmp_path):
     from classmate import config
-    for env in ("ANTHROPIC_API_KEY", "DEEPSEEK_API_KEY", "OPENAI_API_KEY"):
-        monkeypatch.delenv(env, raising=False)
-    monkeypatch.setattr(config, "load_dotenv", lambda *a, **k: None)
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-x")
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "sk-x")
     s = config.load_settings(None)
     assert s.llm == "deepseek" and s.llm_model == "deepseek-flash"
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "a")
+    use_key(monkeypatch, "ANTHROPIC_API_KEY", "a")
     assert config.load_settings(None).llm == "anthropic"
     assert config.load_settings(None, llm="deepseek").llm == "deepseek"     # explicit choice wins
     notes = tmp_path / "notes"
@@ -717,7 +732,7 @@ def fake_openai(seen):
 ])
 async def test_doubao_and_qwen_providers(monkeypatch, provider, env, url, fast, deep, off, on):
     from classmate.llm import Answerer
-    monkeypatch.setenv(env, "k-123")
+    use_key(monkeypatch, env, "k-123")
     s = load_settings(None, llm=provider)
     assert (s.llm_model, s.llm_deep_model, s.llm_base_url) == (fast, deep, url)
     a, seen = Answerer(s), []
@@ -733,7 +748,7 @@ async def test_doubao_and_qwen_providers(monkeypatch, provider, env, url, fast, 
 
 async def test_qwen_screenshots_use_the_vision_model(monkeypatch, tmp_path):
     from classmate.llm import Answerer
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "k")
+    use_key(monkeypatch, "DASHSCOPE_API_KEY", "k")
     a, seen = Answerer(load_settings(None, llm="qwen")), []
     a._openai = fake_openai(seen)
     img = await fake_grab(tmp_path)
@@ -743,9 +758,9 @@ async def test_qwen_screenshots_use_the_vision_model(monkeypatch, tmp_path):
 
 
 def test_auto_llm_picks_doubao_or_qwen_from_keys(monkeypatch):
-    monkeypatch.setenv("DASHSCOPE_API_KEY", "k")
+    use_key(monkeypatch, "DASHSCOPE_API_KEY", "k")
     assert load_settings(None).llm == "qwen"
-    monkeypatch.setenv("ARK_API_KEY", "k")
+    use_key(monkeypatch, "ARK_API_KEY", "k")
     assert load_settings(None).llm == "doubao"
 
 
@@ -837,8 +852,7 @@ def test_save_env_key_replaces_existing_lines(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "ENV_FILE", env)
     config.save_env_key("ARK_API_KEY", "new")
     assert env.read_text() == "# keys\nARK_API_KEY=new\nDEEPSEEK_API_KEY=ds\n"
-    import os
-    assert os.environ["ARK_API_KEY"] == "new" and oct(env.stat().st_mode)[-3:] == "600"
+    assert config.stored_key("ARK_API_KEY") == "new" and oct(env.stat().st_mode)[-3:] == "600"
 
 
 async def test_missing_asr_key_does_not_start(tmp_path):
@@ -896,7 +910,7 @@ def test_answers_are_always_chinese():
 
 async def test_english_answer_is_replaced_by_a_chinese_one(monkeypatch, tmp_path):
     from classmate.llm import RESTART, Answerer
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "k")
     a = Answerer(load_settings(None, llm="deepseek"))
     calls = []
 
@@ -975,7 +989,7 @@ async def test_preferred_code_language(monkeypatch, tmp_path):
     blocks, _ = build_prompt("", "", "", has_images=True, code_language="Java")
     assert "in Java" in blocks[0] and "already given" in blocks[0]
     assert "Code:" not in build_prompt("", "", "", has_images=True)[0][0]      # empty = follow the question
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "k")
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "k")
     a, seen = Answerer(load_settings(None, llm="deepseek", code_language="C++")), []
     a._openai = fake_openai(seen)
     _ = [t async for t in a._stream_once("Write a function to reverse a list", "", "")]

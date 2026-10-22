@@ -20,7 +20,6 @@ Question capture rules
 from __future__ import annotations
 
 import asyncio
-import os
 import itertools
 import re
 import json
@@ -156,7 +155,7 @@ class Session:
                               for name, p in config.PROVIDERS.items()},
                 "asr_providers": config.ASR_PROVIDERS,
                 "default_keys": config.DEFAULT_KEYS,
-                "api_keys": {env: config.mask(v) if (v := config.clean(os.environ.get(env, ""))) else ""
+                "api_keys": {env: config.mask(v) if (v := config.stored_key(env)) else ""
                              for env in envs},          # masked: full keys never reach the page
                 "env_file": str((config.ENV_FILE or config.APP_DIR / ".env").resolve()),
                 "settings_file": str(config.UI_SETTINGS)}

@@ -5,7 +5,7 @@ import asyncio
 import os
 import sys
 
-from .config import KEY_SOURCES, Settings, clean, mask
+from .config import KEY_SOURCES, Settings, mask, stored_key
 
 
 async def _test_llm(settings: Settings) -> str:
@@ -36,8 +36,8 @@ def check_keys(settings: Settings) -> int:
     status = 0
     for provider in (settings.asr, settings.llm):
         name = Settings.API_ENV[provider]
-        value = clean(os.environ.get(name, ""))
-        source = KEY_SOURCES.get(name, "shell environment" if value else "-")
+        value = stored_key(name)
+        source = KEY_SOURCES.get(name, "-")
         print(f"{name}: {mask(value) if value else 'NOT SET'}   from: {source}")
         if not value:
             status = 1
@@ -46,9 +46,9 @@ def check_keys(settings: Settings) -> int:
         print(f"  live test: {result}")
         if result.startswith("FAILED"):
             status = 1
-    if any(os.environ.get(Settings.API_ENV[p]) for p in (settings.llm,)) and status:
-        print("\nIf the key shown above is not the one you expect, check `echo $" +
-              Settings.API_ENV[settings.llm] + "` and ~/.zshrc for an old value.")
+    if status:
+        print("\nKeys are only read from ClassMate's own .env (enter them in the settings panel); "
+              "keys in the shell environment are ignored.")
     return status
 
 

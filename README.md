@@ -23,7 +23,7 @@ The interface is in Chinese; the menu names in this README are translations.
 
 Models, API keys and shortcuts can be changed in the settings panel (gear button in the top-right corner, or Cmd+,).
 
-API keys are never included in this repository. Every user configures their own keys in `.env` or the settings panel.
+API keys are never included in this repository, and ClassMate never picks up keys that already exist on your computer (environment variables, other projects' `.env` files). It only uses the keys you enter in its settings panel or first-run prompt, which are stored in ClassMate's own `.env`.
 
 ## Quick start (Windows 10 / 11)
 

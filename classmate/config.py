@@ -1,7 +1,6 @@
 """Settings from config.yaml (optional) overridden by environment variables and CLI flags."""
 from __future__ import annotations
 
-import os
 import re
 import sys
 from dataclasses import dataclass, field, fields
@@ -181,14 +180,22 @@ class Settings:
 
     def key(self, provider: str) -> str:
         name = self.API_ENV[provider]
-        value = clean(os.environ.get(name, ""))
+        value = stored_key(name)
         if not value:
-            raise RuntimeError(f"Set {name} (environment variable or .env file) to use {provider}")
+            raise RuntimeError(f"还没有填写 {name}：在 ⚙ 设置里填写")
         return value
 
 
 INVISIBLE = "\ufeff\u200b\u200c\u200d\u2060\xa0"
-KEY_SOURCES: dict[str, str] = {}      # env var name -> where its value came from (for --check-keys)
+# API keys the user entered for ClassMate (its own .env, written by the settings panel or the first-run prompt).
+# Keys in the shell environment are deliberately ignored: other tools' keys on the same computer must not be
+# picked up without the user entering them here.
+STORED_KEYS: dict[str, str] = {}
+KEY_SOURCES: dict[str, str] = {}      # key name -> file it came from (for --check-keys)
+
+
+def stored_key(name: str) -> str:
+    return STORED_KEYS.get(name, "")
 
 
 def mask(value: str) -> str:
@@ -203,13 +210,12 @@ def clean(value: str) -> str:
 ENV_FILE: Path | None = None         # the .env that was read (keys saved from the settings panel go here)
 
 
-def load_dotenv(path=".env"):
-    """Read .env next to the app (or the current folder). Values in .env win over the shell,
-    and the last line wins if a key is written twice."""
+def load_dotenv(path=None):
+    """Read the keys from ClassMate's own .env (next to the app, never the current folder, which may belong to
+    another project). The last line wins if a key is written twice."""
     global ENV_FILE
-    candidates = [Path(path), APP_DIR / ".env"]
-    p = next((c for c in candidates if c.is_file()), None)
-    if p is None:
+    p = Path(path) if path else APP_DIR / ".env"
+    if not p.is_file():
         return None
     ENV_FILE = p
     values = {}
@@ -224,13 +230,9 @@ def load_dotenv(path=".env"):
                 print(f"warning: {k} appears more than once in {p}; using the last one")
             values[k] = v
     for k, v in values.items():
-        if not v:
-            continue
-        shell = os.environ.get(k)
-        if shell is not None and clean(shell) != v:
-            print(f"note: {k} in {p} {mask(v)} replaces the shell value {mask(clean(shell))}")
-        os.environ[k] = v
-        KEY_SOURCES[k] = str(p)
+        if v:
+            STORED_KEYS[k] = v
+            KEY_SOURCES[k] = str(p)
     return p
 
 
@@ -252,7 +254,7 @@ def save_env_key(name: str, value: str) -> Path:
         out.append(f"{name}={value}")
     path.write_text("\n".join(out) + "\n", encoding="utf-8")
     path.chmod(0o600)
-    os.environ[name] = value
+    STORED_KEYS[name] = value
     KEY_SOURCES[name] = str(path)
     return path
 
@@ -308,7 +310,7 @@ def clamp_opacity(value) -> float:
 
 
 def has_key(provider: str) -> bool:
-    return bool(clean(os.environ.get(Settings.API_ENV[provider], "")))
+    return bool(stored_key(Settings.API_ENV[provider]))
 
 
 def auto_llm() -> str:
