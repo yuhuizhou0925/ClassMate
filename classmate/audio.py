@@ -196,6 +196,11 @@ class SystemAudioMac:
         SCK.SCShareableContent.getShareableContentWithCompletionHandler_(completion(got))
         content, error = await asyncio.wait_for(got, 10)
         if error is not None or content is None or not content.displays():
+            try:                                     # ask once: macOS shows a prompt and lists this app
+                import Quartz
+                Quartz.CGRequestScreenCaptureAccess()
+            except Exception:
+                pass
             raise RuntimeError(f"没有“屏幕录制”权限，录不到电脑内置声音（{error.localizedDescription() if error else '没有显示器'}）")
         filt = SCK.SCContentFilter.alloc().initWithDisplay_excludingWindows_(content.displays()[0], [])
         cfg = SCK.SCStreamConfiguration.alloc().init()
@@ -277,6 +282,7 @@ def system_audio_source(sample_rate=16000, device=None):
 
 
 class MixedSource:
+    learned_floor = None                          # shared across recordings: each Ctrl tap opens a new source
     """The computer's sound while there is any (the lecturer through Zoom: clear), otherwise the microphone
     while you speak, otherwise silence (so room noise is not transcribed). A short hangover keeps a source
     through brief pauses instead of switching mid-sentence. If the computer's sound cannot be captured, the
@@ -289,6 +295,7 @@ class MixedSource:
         self.current = None
         self.system_error = None
         self._task = None
+        self._floor = MixedSource.learned_floor       # room noise learned in earlier recordings
 
     async def start(self, queue: asyncio.Queue):
         self._mic_q, self._sys_q = asyncio.Queue(), asyncio.Queue()
@@ -307,8 +314,9 @@ class MixedSource:
         level = rms(mic)
         # Room noise differs a lot between rooms: speaking means clearly above the noise floor, which follows
         # quiet moments at once and rises only slowly (so speech itself does not raise it).
-        floor = getattr(self, "_floor", self.mic_threshold / 4)   # not the first chunk: you may already be talking
-        self._floor = level if level < floor else floor + (level - floor) * 0.002
+        floor = self.mic_threshold / 4 if self._floor is None else self._floor   # not the first chunk: you may
+        self._floor = level if level < floor else floor + (level - floor) * 0.002  # already be talking
+        MixedSource.learned_floor = self._floor
         if level > max(self.mic_threshold, self._floor * 4):
             self._mic_until = now + self.hangover
         if now < getattr(self, "_system_until", 0):

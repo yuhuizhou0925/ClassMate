@@ -116,9 +116,16 @@ def check_audio(settings: Settings, seconds: float = 5) -> int:
         await mixed.stop()
         if mixed.system_error or system is None:
             print(f"Computer sound: NOT AVAILABLE ({mixed.system_error or 'not supported on this system'})")
+            if sys.platform == "darwin":
+                app = {"vscode": "Visual Studio Code", "Apple_Terminal": "Terminal (终端)", "iTerm.app": "iTerm"}.get(
+                    os.environ.get("TERM_PROGRAM", ""), "the app you run ClassMate from")
+                print(f"  Fix: System Settings > Privacy & Security > Screen & System Audio Recording > turn on {app},\n"
+                      f"  then quit it completely (Cmd+Q), reopen it and run this check again.")
         else:
             print(f"Computer sound: loudest {max(levels['system'], default=0):.4f} (threshold {settings.system_threshold})")
-        print(f"Microphone:     loudest {max(levels['mic'], default=0):.4f} (threshold {settings.mic_threshold})")
+        quiet = sorted(levels["mic"])[len(levels["mic"]) // 5] if levels["mic"] else 0
+        print(f"Microphone:     loudest {max(levels['mic'], default=0):.4f}, room noise about {quiet:.4f} "
+              f"(speaking = above {max(settings.mic_threshold, (mixed._floor or 0) * 4):.4f})")
         total = sum(heard.values()) or 1
         print("Used: " + ", ".join(f"{k} {v * 100 // total}%" for k, v in heard.items()))
         return 0 if (system is not None and not mixed.system_error) else 1

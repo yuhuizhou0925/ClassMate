@@ -1326,6 +1326,12 @@ def tone(level, n=800):
     return (np.sin(np.arange(n) / 3) * level * 32767 * 1.414).astype(np.int16).tobytes()
 
 
+@pytest.fixture(autouse=True)
+def fresh_noise_floor(monkeypatch):
+    from classmate.audio import MixedSource
+    monkeypatch.setattr(MixedSource, "learned_floor", None)
+
+
 def test_mixer_prefers_computer_sound_then_mic_then_silence():
     from classmate.audio import MixedSource
     m = MixedSource(None, None, hangover=0.8)
@@ -1410,3 +1416,15 @@ def test_resample_and_sample_buffer():
                                                                       None, None)
     y, rate = pcm_from_sample_buffer(sbuf)
     assert rate == 48000 and np.allclose(y, x * 0.5, atol=1e-6)
+
+
+def test_noise_floor_is_remembered_between_recordings():
+    from classmate.audio import MixedSource
+    first = MixedSource(None, None)
+    t = 0.0
+    for _ in range(400):                                   # a noisy room, learned during one recording
+        first.choose(tone(0.03), bytes(1600), t)
+        t += 0.05
+    second = MixedSource(None, None)                       # the next Ctrl tap opens a new source
+    assert second.choose(tone(0.03), bytes(1600), t + 10)[1] == "silence"
+    assert second.choose(tone(0.3), bytes(1600), t + 10.05)[1] == "mic"
