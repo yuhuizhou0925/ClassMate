@@ -25,7 +25,7 @@ class AssemblyAI(StreamingASR):
             params.append(("format_turns", "true"))
         if s.language not in (None, "", "auto"):
             params.append(("language_codes", s.language))
-        terms = s.all_keyterms(100)
+        terms = self.keyterms(100)
         if terms:                                   # one JSON-encoded list (repeated parameters are not read)
             params.append(("keyterms_prompt", json.dumps(terms, ensure_ascii=False)))
         if s.asr_prompt and model.startswith(("universal-3", "u3")):

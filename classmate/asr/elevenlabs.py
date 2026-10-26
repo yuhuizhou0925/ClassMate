@@ -23,7 +23,7 @@ class ElevenLabs(StreamingASR):
                   ("vad_silence_threshold_secs", 0.8)]
         if s.language not in (None, "", "auto"):
             params.append(("language_code", s.language))
-        for term in s.all_keyterms(50):
+        for term in self.keyterms(50):
             params.append(("keyterms", term))
         return f"{self.url}?{urlencode(params)}"
 

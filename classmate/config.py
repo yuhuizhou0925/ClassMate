@@ -32,20 +32,7 @@ PROVIDERS = {
 }
 ASR_PROVIDERS = {"assemblyai": "ASSEMBLYAI_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY", "deepgram": "DEEPGRAM_API_KEY"}
 
-# Speech recognition hints for computer-science / AI application development courses. Exact spelling matters;
-# common English words are left out on purpose (AssemblyAI warns they cause over-corrections).
-CS_AI_TERMS = [
-    "Redis", "MongoDB", "MySQL", "PostgreSQL", "SQLite", "Elasticsearch", "ClickHouse", "Kafka", "RabbitMQ",
-    "RocketMQ", "ZooKeeper", "etcd", "Nginx", "Kubernetes", "Docker", "Helm", "Istio", "gRPC", "GraphQL", "RESTful",
-    "WebSocket", "OAuth", "JWT", "CDN", "HTTPS", "Linux", "GitHub", "CI/CD", "Jenkins", "Terraform", "AWS", "Azure",
-    "Spring Boot", "Django", "FastAPI", "Flask", "Node.js", "React", "Vue", "Next.js", "TypeScript", "JavaScript",
-    "Python", "Java", "Golang", "Rust", "C++", "Kotlin", "PyTorch", "TensorFlow", "Hugging Face", "Transformer",
-    "BERT", "GPT", "LLM", "RAG", "LangChain", "LlamaIndex", "Milvus", "FAISS", "LoRA", "RLHF", "CUDA", "GPU",
-    "API", "SDK", "JSON", "SQL", "NoSQL", "OpenAI", "DeepSeek", "Claude",
-    "微服务", "分布式", "高并发", "负载均衡", "消息队列", "分库分表", "读写分离", "限流", "熔断", "幂等",
-    "向量数据库", "大模型", "微调", "智能体", "提示词", "嵌入向量",
-]
-KEYTERM_PRESETS = {"cs_ai": CS_AI_TERMS}
+# Speech recognition hints: the built-in vocabulary lives in vocab.py (about 1,200 terms, 100 chosen per recording).
 DEFAULT_ASR_PROMPT = ("A university lecture or technical discussion about computer science and AI application "
                       "development, spoken in Mandarin Chinese mixed with English technical terms that are often "
                       "pronounced with a Chinese accent, such as Redis, Kafka, Kubernetes, LLM and RAG.")
@@ -144,7 +131,7 @@ class Settings:
     system_threshold: float = 0.003         # loudness above which the computer's sound counts as playing
     mic_threshold: float = 0.012            # loudness above which you count as speaking into the microphone
     keyterms: list[str] = field(default_factory=list)   # your own course vocabulary (sent first)
-    keyterm_preset: str = "cs_ai"           # built-in vocabulary added after yours ("" = none)
+    keyterm_preset: str = "cs_ai"           # built-in vocabulary (vocab.py) added after yours ("" = none)
     asr_prompt: str = DEFAULT_ASR_PROMPT    # describes the lecture to the recogniser (Universal-3 models)
     corrections: dict = field(default_factory=lambda: {"reduis": "Redis"})   # mis-heard -> intended
     # answer generation
@@ -207,15 +194,13 @@ class Settings:
         self.llm_vision_model = self.llm_vision_model or p.get("vision_model", "")
         self.llm_base_url = self.llm_base_url or p["base_url"]
 
-    def all_keyterms(self, limit: int = 100) -> list[str]:
-        """Your terms first, then the preset; no duplicates, at most `limit`, each at most 50 characters."""
-        seen, out = set(), []
-        for term in list(self.keyterms or []) + KEYTERM_PRESETS.get(self.keyterm_preset or "", []):
-            term = str(term).strip()
-            if term and len(term) <= 50 and term.lower() not in seen:
-                seen.add(term.lower())
-                out.append(term)
-        return out[:limit]
+    def all_keyterms(self, limit: int = 100, notes: str = "", recent: str = "") -> list[str]:
+        """Key terms for one recording: yours first, then (with the built-in vocabulary on) library terms heard
+        recently or found in the course notes, then the core terms. At most `limit`, each at most 50 characters."""
+        from .vocab import pick_keyterms
+        if self.keyterm_preset:
+            return pick_keyterms(self.keyterms or [], notes, recent, limit)
+        return pick_keyterms(self.keyterms or [], limit=limit)[: len(self.keyterms or [])]
 
     def key(self, provider: str) -> str:
         name = self.API_ENV[provider]

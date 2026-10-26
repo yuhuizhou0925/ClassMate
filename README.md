@@ -174,7 +174,7 @@ python -m classmate --llm openai --base-url https://api.groq.com/openai/v1 --mod
 - Qwen accounts on the international site need the endpoint `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (Settings > Endpoint, or `--base-url`).
 
 Tips for better accuracy:
-- Technical terms with an accent: a built-in computer-science / AI vocabulary (Redis, Kafka, Kubernetes, LangChain, RAG, ...) and a short description of the lecture are sent to the recogniser. Add your own course terms under Settings > Vocabulary (or `keyterms` in `config.yaml`); yours come first, 100 terms in total.
+- Technical terms with an accent: ClassMate has a built-in vocabulary of about 1,200 computer-science and AI application development terms (`classmate/vocab.py`: databases, messaging, cloud and DevOps, networking and security, languages, frameworks, machine learning, LLM applications, system design, algorithms, product). The recogniser accepts at most 100 terms per session, so for each recording ClassMate picks your own terms first, then terms said in the last half hour, then terms in the course notes, then a core list. A short description of the lecture is sent as well. Add your own course terms under Settings > Vocabulary (or `keyterms` in `config.yaml`).
 - A word that is still mis-heard every time can be fixed under Settings > Vocabulary > Corrections, for example `reduis=Redis`; the replacement happens before the text is shown or sent to the answer model.
 - Load the week's slides with `--notes` or the `notes` folder.
 - For online lectures use BlackHole instead of recording the speakers.
@@ -187,7 +187,7 @@ ClassMate is meant to help you follow a lecture, understand questions and organi
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 92 tests
+pytest -q          # 111 tests
 ```
 
 | File | Purpose |

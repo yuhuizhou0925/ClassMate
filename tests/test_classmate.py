@@ -1488,3 +1488,38 @@ async def test_misheard_words_are_corrected(tmp_path):
     assert ans.calls[0]["q"] == "Redis 和 Kubernetes 怎么配合？不要改 reduisX"
     await session.save_config({"corrections": {" foo ": "Bar", "": "x"}, "keyterms": [" Milvus ", ""]})
     assert session.s.corrections == {"foo": "Bar"} and session.s.keyterms == ["Milvus"]
+
+
+# ---------------- ~1,200-term vocabulary, 100 chosen per recording ----------------
+def test_vocabulary_library():
+    from classmate import vocab
+    lib = vocab.library()
+    assert len(lib) >= 1000 and len({t.lower() for t in lib}) == len(lib)
+    assert all(0 < len(t) <= 50 for t in lib)
+    assert all(t.lower() in {x.lower() for x in lib} for t in vocab.CORE)
+    for plain in ("agent", "token", "model", "prompt", "data", "server"):     # common words cause over-correction
+        assert plain not in {t.lower() for t in lib}
+    found = vocab.mentioned("用 node.js 和 C++，CI/CD 走 GitHub Actions；B+ tree 索引；redisson 不算 Redis")
+    assert {"Node.js", "C++", "CI/CD", "GitHub Actions", "B+ tree", "Redis", "索引"} <= set(found)
+    assert found["Redis"] == 1
+
+
+def test_keyterms_follow_notes_and_what_was_said():
+    from classmate import vocab
+    notes = "Week 9: stream processing with Flink. Flink windows, Flink state, Kafka Streams and Debezium CDC."
+    terms = vocab.pick_keyterms(["Milvus"], notes=notes, recent="我们用 Redis 做缓存", limit=100)
+    assert terms[0] == "Milvus" and terms.index("Redis") < terms.index("Flink") < terms.index("Debezium")
+    assert len(terms) <= 100 and "Kubernetes" in terms                     # core terms fill the rest
+    big = vocab.pick_keyterms(notes=" ".join(vocab.library()), limit=100)
+    assert len(big) == 100                                                 # never more than the API accepts
+
+
+async def test_recogniser_gets_terms_from_this_session(tmp_path):
+    from classmate.asr.assemblyai import AssemblyAI
+    s = Settings(session_dir=str(tmp_path))
+    session = Session(s, lambda: None, asr=AssemblyAI(s), answerer=FakeAnswerer())
+    session.notes = "This week: vector search with Qdrant and pgvector, reranking with BGE."
+    session.transcript.add("我们今天讲 LangGraph 的多智能体", 0)
+    session.transcript.lines[-1].t = __import__("time").time()
+    terms = json.loads(parse_qs(urlparse(session.asr.build_url()).query)["keyterms_prompt"][0])
+    assert {"Qdrant", "pgvector", "BGE", "LangGraph", "多智能体"} <= set(terms) and len(terms) <= 100

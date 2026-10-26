@@ -243,10 +243,10 @@
 
     <h3>专业词汇与纠错</h3>
     <label class="row"><span>内置词库</span><span><input type="checkbox" id="f_keyterm_preset" style="width:auto">
-      计算机 / AI 应用开发（Redis、Kafka、Kubernetes、LangChain、RAG、微服务、高并发…）</span></label>
+      计算机 / AI 应用开发，约 1200 个词（Redis、Kafka、Kubernetes、LangChain、RAG、微服务…）</span></label>
     <label class="row"><span>我的专业词</span><textarea id="f_keyterms" rows="3" spellcheck="false"
       placeholder="每行一个，写准确的拼写和大小写，例如&#10;Milvus&#10;homography"></textarea></label>
-    <div class="hint">告诉语音识别这些词会出现，口音重时也更容易认对。和内置词库合计最多 100 个，你的词优先。</div>
+    <div class="hint">告诉语音识别这些词会出现，口音重时也更容易认对。识别服务每次最多接受 100 个词：每次录音会先放你的词，再从内置词库里挑最近说过的、课件里出现的词。</div>
     <label class="row"><span>识别纠错</span><textarea id="f_corrections" rows="3" spellcheck="false"
       placeholder="每行一条：识别错的=正确的，例如&#10;reduis=Redis"></textarea></label>
     <div class="hint">某个词总被识别错时加一条，显示和发给模型前会自动替换（不区分大小写，只替换完整的词）。</div>

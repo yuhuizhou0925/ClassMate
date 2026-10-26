@@ -74,6 +74,7 @@ class Session:
         self.own_asr, self.own_answerer = asr is None, answerer is None    # False: injected (tests, demo)
         self.asr = asr or make_asr(settings)
         self.answerer = answerer or Answerer(settings)
+        self.asr.context = self.keyterm_context
         self.on_keys_changed = None                   # restarts the global key listener (set by __main__)
         self.license = licensing.load()               # None until an authorization code is entered
         self.native = False                           # native window (opacity slider) or a browser tab
@@ -232,6 +233,7 @@ class Session:
             asyncio.ensure_future(self.check_model())
         if (bool(api_keys) or changed & {"asr", "asr_model", "language", "keyterms", "keyterm_preset"}) and self.own_asr:
             self.asr = make_asr(s)
+            self.asr.context = self.keyterm_context
             if self.listening:                          # reconnect with the new recognizer
                 await self.stop()
                 await self.start()
@@ -266,6 +268,12 @@ class Session:
         return any(not t.done() for t in self._answers.values())
 
     # ---------- speech ----------
+    def keyterm_context(self) -> tuple[str, str]:
+        """What decides which ~100 of the built-in terms go to the recogniser: the course notes, and what was
+        said and asked in the last half hour."""
+        recent = self.transcript.window(30) + "\n" + "\n".join(list(self.questions.values())[-20:])
+        return self.notes, recent
+
     def correct(self, text: str) -> str:
         """Fix words the recogniser keeps mis-hearing (settings: corrections, e.g. reduis -> Redis)."""
         fixes = self.s.corrections or {}

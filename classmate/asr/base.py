@@ -17,6 +17,11 @@ class StreamingASR:
     def __init__(self, settings):
         self.settings = settings
         self.url_override = None          # tests point this at a local fake server
+        self.context = None               # () -> (course notes, recent transcript): picks the key terms
+
+    def keyterms(self, limit: int) -> list[str]:
+        notes, recent = self.context() if self.context else ("", "")
+        return self.settings.all_keyterms(limit, notes, recent)
 
     def headers(self) -> dict:
         raise NotImplementedError
