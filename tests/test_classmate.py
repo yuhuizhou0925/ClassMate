@@ -530,7 +530,7 @@ async def test_tab_screenshot_is_answered_as_its_own_titled_question(tmp_path):
     assert all(len(e["images"]) == 1 and e["images"][0].startswith("/shots/") for e in shots)
     image_calls = [c for c in ans.calls if c["images"]]
     assert len(image_calls) == 2 and image_calls[0]["q"] == ""
-    assert image_calls[0]["history"][0][0] == "What is a kernel?"      # earlier answers still used
+    assert image_calls[0]["history"] == []            # a screenshot is a new item: no earlier answers
     # deep answer on a screenshot keeps its image
     await session.handle_command({"cmd": "deep", "id": shots[0]["id"]})
     await settle()
@@ -1428,3 +1428,28 @@ def test_noise_floor_is_remembered_between_recordings():
     second = MixedSource(None, None)                       # the next Ctrl tap opens a new source
     assert second.choose(tone(0.03), bytes(1600), t + 10)[1] == "silence"
     assert second.choose(tone(0.3), bytes(1600), t + 10.05)[1] == "mic"
+
+
+# ---------------- earlier answers only for follow-up questions ----------------
+@pytest.mark.parametrize("question, follow", [
+    ("怎么设计一个外卖平台的产品架构？", False), ("MongoDB 的分片是怎么实现的？", False),
+    ("Design the architecture of a food delivery app", False), ("这个卷积核的作用是什么？", False),
+    ("那性能呢？", True), ("它和 MySQL 有什么区别？", True), ("刚才那个方案的缺点是什么", True),
+    ("这个方案怎么扩展到百万用户", True), ("How does it scale?", True), ("What about consistency?", True),
+    ("为什么？", True), ("", False),
+])
+def test_follow_up_detection(question, follow):
+    from classmate.questions import is_follow_up
+    assert bool(is_follow_up(question)) is follow
+
+
+async def test_unrelated_question_gets_no_earlier_answers(tmp_path):
+    session, ans = make_session(tmp_path)
+    ans.gate.set()
+    for q in ("MongoDB 的分片是怎么实现的？", "怎么设计一个外卖平台的产品架构？", "那它的数据库应该怎么选？"):
+        qid = session.ask(q, source="typed")
+        await session._answers[qid]
+    assert ans.calls[1]["history"] == []                       # new topic: answered on its own
+    assert [q for q, _ in ans.calls[2]["history"]] == ["MongoDB 的分片是怎么实现的？", "怎么设计一个外卖平台的产品架构？"]
+    blocks, _ = build_prompt("怎么设计一个外卖平台的产品架构？", "", "")
+    assert "Never carry a technology" in blocks[0]

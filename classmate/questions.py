@@ -77,3 +77,26 @@ def find_question(turn: str, threshold: float = 0.5) -> str | None:
         return turn if question_score(turn) >= threshold else None
     start = max(0, best - 1)
     return " ".join(sentences[start:best + 1])
+
+
+# Words that point back to an earlier question or answer. Plain "这个 / this" is not enough on its own: in a
+# lecture it usually means the slide ("这个卷积核的作用是什么"), not the previous answer.
+ZH_BACK = re.compile(r"(它们?|刚才|刚刚|上面|前面|之前|上一[个题问步]|上述|继续|接着|再说|还有呢|那么|同样|此外|另外|"
+                     r"区别|对比|比较|相比|[这那][个种](方案|方法|做法|算法|技术|架构|设计|模型|思路|结果|答案)|"
+                     r"这样做|那样做|^那.{0,12}[呢吗]|^为什么[？?]?$)")
+EN_BACK = re.compile(r"\b(it|its|they|them|those|that one|the (previous|last|above|same)|earlier|above|also|"
+                     r"what about|how about|instead|compared?|difference|differ|versus|vs\.?|then why|and why|why not)\b",
+                     re.I)
+
+
+def is_follow_up(question: str) -> bool:
+    """Does this question build on an earlier one ("那性能呢？", "how does it scale?")? Only then are earlier
+    questions and answers sent along, so an unrelated new question is not steered towards the old topic."""
+    q = " ".join((question or "").split())
+    if not q:
+        return False                                  # a screenshot: a new item
+    if ZH_BACK.search(q) or EN_BACK.search(q):
+        return True
+    cjk = len(re.findall(r"[一-鿿]", q))
+    words = len(re.findall(r"[A-Za-z]+", q))
+    return (cjk and cjk <= 6 and words <= 1) or (not cjk and words <= 3)    # "为什么呢？", "why so?"

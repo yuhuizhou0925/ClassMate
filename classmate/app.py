@@ -34,7 +34,7 @@ from . import license as licensing
 from .asr import Transcript, make_asr
 from .context import TranscriptBuffer, load_notes
 from .llm import RESTART, Answerer
-from .questions import find_question
+from .questions import find_question, is_follow_up
 
 log = logging.getLogger("classmate")
 UI = Path(__file__).parent / "ui" / "index.html"
@@ -521,9 +521,10 @@ class Session:
         return qid
 
     def prior_qa(self, qid) -> list[tuple[str, str]]:
-        """Earlier answered questions (oldest first), excluding the one being answered."""
+        """Earlier answered questions (oldest first), excluding the one being answered. Only for follow-up
+        questions: otherwise the model drags the earlier topic (say MongoDB) into an unrelated new answer."""
         n = int(self.s.history_answers)
-        if n <= 0:
+        if n <= 0 or not is_follow_up(self.questions.get(qid, "")):
             return []
         earlier = [(q, self.questions[q]) for q in sorted(self.answers) if q != qid and q < qid]
         return [(text, self.answers[q]) for q, text in earlier[-n:]]
