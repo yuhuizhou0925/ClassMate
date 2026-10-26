@@ -12,6 +12,7 @@ from .config import PROVIDERS
 CHINESE = """必须全程使用简体中文作答，绝对不要用英文作答——即使老师、问题、课件、转写或截图全是英文也一样。
 代码、公式、符号、人名保持原样；关键专业术语第一次出现时在括号里附英文原词，例如：单应性（homography）。
 数学公式一律用 LaTeX：行内公式写成 $...$，独立成行的公式写成 $$...$$。
+问题和转写来自语音识别，英文技术词可能因口音被识别错（例如 reduis 其实是 Redis、cuber netes 是 Kubernetes），请按本意理解，回答里写正确的拼写。
 Always answer in Simplified Chinese only. Never answer in English.
 
 """

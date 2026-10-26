@@ -32,6 +32,24 @@ PROVIDERS = {
 }
 ASR_PROVIDERS = {"assemblyai": "ASSEMBLYAI_API_KEY", "elevenlabs": "ELEVENLABS_API_KEY", "deepgram": "DEEPGRAM_API_KEY"}
 
+# Speech recognition hints for computer-science / AI application development courses. Exact spelling matters;
+# common English words are left out on purpose (AssemblyAI warns they cause over-corrections).
+CS_AI_TERMS = [
+    "Redis", "MongoDB", "MySQL", "PostgreSQL", "SQLite", "Elasticsearch", "ClickHouse", "Kafka", "RabbitMQ",
+    "RocketMQ", "ZooKeeper", "etcd", "Nginx", "Kubernetes", "Docker", "Helm", "Istio", "gRPC", "GraphQL", "RESTful",
+    "WebSocket", "OAuth", "JWT", "CDN", "HTTPS", "Linux", "GitHub", "CI/CD", "Jenkins", "Terraform", "AWS", "Azure",
+    "Spring Boot", "Django", "FastAPI", "Flask", "Node.js", "React", "Vue", "Next.js", "TypeScript", "JavaScript",
+    "Python", "Java", "Golang", "Rust", "C++", "Kotlin", "PyTorch", "TensorFlow", "Hugging Face", "Transformer",
+    "BERT", "GPT", "LLM", "RAG", "LangChain", "LlamaIndex", "Milvus", "FAISS", "LoRA", "RLHF", "CUDA", "GPU",
+    "API", "SDK", "JSON", "SQL", "NoSQL", "OpenAI", "DeepSeek", "Claude",
+    "微服务", "分布式", "高并发", "负载均衡", "消息队列", "分库分表", "读写分离", "限流", "熔断", "幂等",
+    "向量数据库", "大模型", "微调", "智能体", "提示词", "嵌入向量",
+]
+KEYTERM_PRESETS = {"cs_ai": CS_AI_TERMS}
+DEFAULT_ASR_PROMPT = ("A university lecture or technical discussion about computer science and AI application "
+                      "development, spoken in Mandarin Chinese mixed with English technical terms that are often "
+                      "pronounced with a Chinese accent, such as Redis, Kafka, Kubernetes, LLM and RAG.")
+
 # Keyboard shortcuts: action -> key. Keys are lower-case names ("tab", "f5", "space", "escape", "d", "/")
 # with optional modifiers in the order ctrl+alt+shift+cmd ("shift+up", "cmd+,").
 DEFAULT_KEYS = {
@@ -125,7 +143,10 @@ class Settings:
     system_device: str | None = None        # capture the computer's sound from this input device (BlackHole...)
     system_threshold: float = 0.003         # loudness above which the computer's sound counts as playing
     mic_threshold: float = 0.012            # loudness above which you count as speaking into the microphone
-    keyterms: list[str] = field(default_factory=list)   # course vocabulary to bias recognition
+    keyterms: list[str] = field(default_factory=list)   # your own course vocabulary (sent first)
+    keyterm_preset: str = "cs_ai"           # built-in vocabulary added after yours ("" = none)
+    asr_prompt: str = DEFAULT_ASR_PROMPT    # describes the lecture to the recogniser (Universal-3 models)
+    corrections: dict = field(default_factory=lambda: {"reduis": "Redis"})   # mis-heard -> intended
     # answer generation
     llm: str = ""                           # anthropic | deepseek | doubao | qwen | openai; empty = first key present
     llm_model: str = ""                     # empty = provider default (see PROVIDERS)
@@ -185,6 +206,16 @@ class Settings:
         self.llm_deep_model = self.llm_deep_model or p["deep_model"] or self.llm_model
         self.llm_vision_model = self.llm_vision_model or p.get("vision_model", "")
         self.llm_base_url = self.llm_base_url or p["base_url"]
+
+    def all_keyterms(self, limit: int = 100) -> list[str]:
+        """Your terms first, then the preset; no duplicates, at most `limit`, each at most 50 characters."""
+        seen, out = set(), []
+        for term in list(self.keyterms or []) + KEYTERM_PRESETS.get(self.keyterm_preset or "", []):
+            term = str(term).strip()
+            if term and len(term) <= 50 and term.lower() not in seen:
+                seen.add(term.lower())
+                out.append(term)
+        return out[:limit]
 
     def key(self, provider: str) -> str:
         name = self.API_ENV[provider]
@@ -271,7 +302,7 @@ def save_env_key(name: str, value: str) -> Path:
 UI_SETTINGS = APP_DIR / "settings.yaml"
 UI_FIELDS = ("llm", "llm_model", "llm_deep_model", "llm_vision_model", "llm_base_url", "vision", "asr", "asr_model",
              "language", "answer_style", "code_language", "capture_style", "keys", "opacity", "hide_from_capture",
-             "audio_source")
+             "audio_source", "keyterms", "keyterm_preset", "corrections")
 
 
 def read_ui_settings() -> dict:

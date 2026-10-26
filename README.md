@@ -174,7 +174,8 @@ python -m classmate --llm openai --base-url https://api.groq.com/openai/v1 --mod
 - Qwen accounts on the international site need the endpoint `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` (Settings > Endpoint, or `--base-url`).
 
 Tips for better accuracy:
-- List course-specific terms (for example homography, RANSAC, SIFT) under `keyterms` in `config.yaml`.
+- Technical terms with an accent: a built-in computer-science / AI vocabulary (Redis, Kafka, Kubernetes, LangChain, RAG, ...) and a short description of the lecture are sent to the recogniser. Add your own course terms under Settings > Vocabulary (or `keyterms` in `config.yaml`); yours come first, 100 terms in total.
+- A word that is still mis-heard every time can be fixed under Settings > Vocabulary > Corrections, for example `reduis=Redis`; the replacement happens before the text is shown or sent to the answer model.
 - Load the week's slides with `--notes` or the `notes` folder.
 - For online lectures use BlackHole instead of recording the speakers.
 

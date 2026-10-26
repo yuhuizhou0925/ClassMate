@@ -26,7 +26,7 @@ class Deepgram(StreamingASR):
                   ("sample_rate", s.sample_rate), ("channels", 1), ("interim_results", "true"),
                   ("smart_format", "true"), ("punctuate", "true"), ("endpointing", 500),
                   ("utterance_end_ms", 1200)]
-        for term in s.keyterms[:50]:
+        for term in s.all_keyterms(50):
             params.append(("keyterm", term))
         return f"{self.url}?{urlencode(params)}"
 

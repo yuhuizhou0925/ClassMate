@@ -25,8 +25,11 @@ class AssemblyAI(StreamingASR):
             params.append(("format_turns", "true"))
         if s.language not in (None, "", "auto"):
             params.append(("language_codes", s.language))
-        for term in s.keyterms[:100]:
-            params.append(("keyterms_prompt", term))
+        terms = s.all_keyterms(100)
+        if terms:                                   # one JSON-encoded list (repeated parameters are not read)
+            params.append(("keyterms_prompt", json.dumps(terms, ensure_ascii=False)))
+        if s.asr_prompt and model.startswith(("universal-3", "u3")):
+            params.append(("prompt", s.asr_prompt))
         return f"{self.url}?{urlencode(params)}"
 
     async def send_end(self, ws):

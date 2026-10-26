@@ -139,6 +139,8 @@
                  margin: 16px 0 6px; }
   .row { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; margin-bottom: 7px; }
   .row > span { font-size: 13px; color: var(--muted); }
+  .row textarea { font: 13px/1.5 var(--mono); padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line);
+                  background: var(--panel); color: var(--ink); width: 100%; resize: vertical; }
   .row input, .row select { font: inherit; font-size: 13.5px; padding: 5px 8px; border-radius: 7px; border: 1px solid var(--line);
                             background: var(--panel); color: var(--ink); min-width: 0; width: 100%; }
   .row input::placeholder { color: var(--partial); }
@@ -238,6 +240,16 @@
     <label class="row"><span id="f_asr_keylabel">API key</span><input id="f_asr_key" type="password" autocomplete="off"></label>
     <label class="row"><span>语言</span><select id="f_language">
       <option value="auto">自动（支持中英混说）</option><option value="zh">中文</option><option value="en">English</option></select></label>
+
+    <h3>专业词汇与纠错</h3>
+    <label class="row"><span>内置词库</span><span><input type="checkbox" id="f_keyterm_preset" style="width:auto">
+      计算机 / AI 应用开发（Redis、Kafka、Kubernetes、LangChain、RAG、微服务、高并发…）</span></label>
+    <label class="row"><span>我的专业词</span><textarea id="f_keyterms" rows="3" spellcheck="false"
+      placeholder="每行一个，写准确的拼写和大小写，例如&#10;Milvus&#10;homography"></textarea></label>
+    <div class="hint">告诉语音识别这些词会出现，口音重时也更容易认对。和内置词库合计最多 100 个，你的词优先。</div>
+    <label class="row"><span>识别纠错</span><textarea id="f_corrections" rows="3" spellcheck="false"
+      placeholder="每行一条：识别错的=正确的，例如&#10;reduis=Redis"></textarea></label>
+    <div class="hint">某个词总被识别错时加一条，显示和发给模型前会自动替换（不区分大小写，只替换完整的词）。</div>
 
     <h3>窗口</h3>
     <label class="row"><span>共享屏幕时隐藏</span><span><input type="checkbox" id="f_hide_from_capture" style="width:auto">
@@ -595,7 +607,16 @@ $('opacity').onchange = (e) => { send({cmd: 'opacity', value: e.target.value / 1
 // ---------- settings panel ----------
 let cfg = null, draft = null, recording = null, saving = false, cfgDirty = false;
 const FIELDS = ['llm', 'llm_model', 'llm_deep_model', 'llm_vision_model', 'llm_base_url', 'vision', 'asr', 'language',
-                'answer_style', 'code_language', 'capture_style', 'hide_from_capture', 'audio_source'];
+                'answer_style', 'code_language', 'capture_style', 'hide_from_capture', 'audio_source',
+                'keyterms', 'keyterm_preset', 'corrections'];
+// fields whose stored value is not a plain string: [to the form, from the form]
+const CONVERT = {
+  keyterms: [v => (v || []).join('\n'), t => t.split('\n').map(x => x.trim()).filter(Boolean)],
+  corrections: [v => Object.entries(v || {}).map(([a, b]) => `${a}=${b}`).join('\n'),
+                t => Object.fromEntries(t.split('\n').map(l => l.split('=')).filter(p => p.length >= 2 && p[0].trim())
+                                         .map(([a, ...b]) => [a.trim(), b.join('=').trim()]))],
+  keyterm_preset: [v => !!v, c => c ? 'cs_ai' : ''],
+};
 function setMsg(t, cls = '') { const e = $('setmsg'); e.textContent = t; e.className = cls; }
 function openSettings() { $('settings').hidden = false; cfgDirty = false; setMsg(''); send({cmd: 'get_config'}); if (cfg) fillSettings(); }
 function closeSettings() { $('settings').hidden = true; recording = null; }
@@ -603,7 +624,9 @@ function fillSettings() {
   const v = cfg.values;
   $('f_llm').innerHTML = Object.entries(cfg.providers).map(([k, p]) => `<option value="${k}">${esc(p.label)}</option>`).join('');
   FIELDS.forEach(f => {
-    if ($('f_' + f).type === 'checkbox') { $('f_' + f).checked = !!v[f]; return; }
+    const shown = CONVERT[f] ? CONVERT[f][0](v[f]) : v[f];
+    if ($('f_' + f).type === 'checkbox') { $('f_' + f).checked = !!shown; return; }
+    if (CONVERT[f]) { $('f_' + f).value = shown; return; }
     const el = $('f_' + f), val = v[f] || '';
     if (el.tagName === 'SELECT' && val && ![...el.options].some(o => o.value === val)) el.add(new Option(val, val));
     el.value = val;
@@ -683,7 +706,10 @@ $('setbtn').onclick = openSettings;
 $('setcancel').onclick = closeSettings;
 $('setsave').onclick = () => {
   const values = {keys: draft.keys};
-  FIELDS.forEach(f => { const el = $('f_' + f); values[f] = el.type === 'checkbox' ? el.checked : el.value.trim(); });
+  FIELDS.forEach(f => {
+    const el = $('f_' + f), raw = el.type === 'checkbox' ? el.checked : el.value.trim();
+    values[f] = CONVERT[f] ? CONVERT[f][1](raw) : raw;
+  });
   const api_keys = {};
   ['f_llm_key', 'f_asr_key'].forEach(id => { const v = $(id).value.trim(); if (v) api_keys[$(id).dataset.env] = v; });
   if (values.llm === 'openai' && !values.llm_model) { setMsg('OpenAI 兼容接口需要填模型名', 'err'); return; }

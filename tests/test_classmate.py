@@ -94,7 +94,9 @@ def test_assemblyai_parse_and_url(monkeypatch):
     asr = AssemblyAI(settings(language="zh", keyterms=["homography"]))
     q = parse_qs(urlparse(asr.build_url()).query)
     assert q["speech_model"] == ["universal-3-6-pro"] and q["language_codes"] == ["zh"]
-    assert q["keyterms_prompt"] == ["homography"] and q["encoding"] == ["pcm_s16le"]
+    terms = json.loads(q["keyterms_prompt"][0])             # one JSON list, as the streaming API expects
+    assert terms[0] == "homography" and "Redis" in terms and len(terms) <= 100 and q["encoding"] == ["pcm_s16le"]
+    assert "computer science and AI" in q["prompt"][0]
     assert asr.headers() == {"Authorization": "k"}
     assert asr.parse({"type": "Begin"}) == []
     [e] = asr.parse({"type": "Turn", "transcript": "what is", "end_of_turn": False})
@@ -1453,3 +1455,36 @@ async def test_unrelated_question_gets_no_earlier_answers(tmp_path):
     assert [q for q, _ in ans.calls[2]["history"]] == ["MongoDB 的分片是怎么实现的？", "怎么设计一个外卖平台的产品架构？"]
     blocks, _ = build_prompt("怎么设计一个外卖平台的产品架构？", "", "")
     assert "Never carry a technology" in blocks[0]
+
+
+# ---------------- recognition of technical terms ----------------
+def test_keyterms_combine_yours_first_then_preset():
+    s = Settings(keyterms=["homography", "redis", "x" * 60])
+    terms = s.all_keyterms()
+    assert terms[:2] == ["homography", "redis"] and "Redis" not in terms       # no case-insensitive duplicate
+    assert all(len(t) <= 50 for t in terms) and len(terms) <= 100 and "Kubernetes" in terms
+    assert Settings(keyterm_preset="").all_keyterms() == []
+    assert len(Settings(keyterms=[f"t{i}" for i in range(150)]).all_keyterms()) == 100
+    from classmate.asr.assemblyai import AssemblyAI
+    old = parse_qs(urlparse(AssemblyAI(Settings(asr_model="universal-streaming-english")).build_url()).query)
+    assert "prompt" not in old                                  # free-form prompt only for Universal-3 models
+
+
+async def test_misheard_words_are_corrected(tmp_path):
+    session, ans = make_session(tmp_path)
+    ans.gate.set()
+    session.s.corrections = {"reduis": "Redis", "cuber netes": "Kubernetes"}
+    events = []
+    orig = session.broadcast
+
+    async def capture(e):
+        events.append(e)
+        await orig(e)
+    session.broadcast = capture
+    await session.on_transcript(Transcript("用 Reduis 做缓存", final=False))
+    await say(session, "reduis 和 cuber netes 怎么配合？不要改 reduisX")
+    await settle()
+    assert events[0]["text"] == "用 Redis 做缓存"
+    assert ans.calls[0]["q"] == "Redis 和 Kubernetes 怎么配合？不要改 reduisX"
+    await session.save_config({"corrections": {" foo ": "Bar", "": "x"}, "keyterms": [" Milvus ", ""]})
+    assert session.s.corrections == {"foo": "Bar"} and session.s.keyterms == ["Milvus"]

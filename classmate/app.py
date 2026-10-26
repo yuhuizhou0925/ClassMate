@@ -186,6 +186,13 @@ class Session:
                 values[k] = (values[k] or "").strip() or None
         if "hide_from_capture" in values:
             values["hide_from_capture"] = bool(values["hide_from_capture"])
+        if "keyterms" in values:
+            values["keyterms"] = [str(t).strip()[:50] for t in values["keyterms"] or [] if str(t).strip()][:100]
+        if "keyterm_preset" in values and values["keyterm_preset"] not in ("", "cs_ai"):
+            raise ValueError("keyterm_preset must be cs_ai or empty")
+        if "corrections" in values:
+            values["corrections"] = {str(k).strip(): str(v).strip() for k, v in (values["corrections"] or {}).items()
+                                     if str(k).strip() and str(v).strip()}
         if "code_language" in values:
             values["code_language"] = (values["code_language"] or "").strip()[:40]
         if values.get("llm", s.llm) != s.llm:            # models of the old provider do not carry over
@@ -223,7 +230,7 @@ class Session:
         if llm_changed and self.own_answerer:
             self.answerer = Answerer(s)
             asyncio.ensure_future(self.check_model())
-        if (bool(api_keys) or changed & {"asr", "asr_model", "language"}) and self.own_asr:
+        if (bool(api_keys) or changed & {"asr", "asr_model", "language", "keyterms", "keyterm_preset"}) and self.own_asr:
             self.asr = make_asr(s)
             if self.listening:                          # reconnect with the new recognizer
                 await self.stop()
@@ -259,7 +266,21 @@ class Session:
         return any(not t.done() for t in self._answers.values())
 
     # ---------- speech ----------
+    def correct(self, text: str) -> str:
+        """Fix words the recogniser keeps mis-hearing (settings: corrections, e.g. reduis -> Redis)."""
+        fixes = self.s.corrections or {}
+        if not fixes:
+            return text
+        if getattr(self, "_fixes", (None,))[0] != fixes:
+            words = sorted(fixes, key=len, reverse=True)
+            pattern = re.compile("|".join(rf"(?<![A-Za-z0-9]){re.escape(w)}(?![A-Za-z0-9])" for w in words), re.I)
+            lower = {w.lower(): v for w, v in fixes.items()}
+            self._fixes = (dict(fixes), pattern, lower)
+        _, pattern, lower = self._fixes
+        return pattern.sub(lambda m: lower[m.group(0).lower()], text)
+
     async def on_transcript(self, event: Transcript):
+        event.text = self.correct(event.text)
         if not event.final:
             self.partial = event.text
             await self.broadcast({"type": "partial", "text": event.text})
