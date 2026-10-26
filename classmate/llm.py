@@ -47,6 +47,27 @@ Do the actual work; do not just describe the picture:
    blocks are fine). Use the course notes' terminology where relevant.
 - If part of the screen is unreadable or cut off, say what is missing instead of guessing."""
 
+ENGINEER = CHINESE + """You help a university student who wants an engineering-grade, exhaustive treatment of a question
+from a live lecture (spoken, typed, or shown in a screenshot). A short answer has already been drafted; go far
+beyond it. Latency does not matter here, completeness and correctness do.
+
+Write a thorough, well-structured answer with these sections (use "### " headings; skip one only if it truly does
+not apply, and say why in one line):
+### 核心结论 — the direct answer in 2-3 sentences.
+### 原理与推导 — the underlying theory step by step: definitions, assumptions, formulas and their derivation,
+    intuition, and how it connects to the course material.
+### 工程实现 — complete, runnable, well-commented code in fenced code blocks (no pseudo-code, no "..."), with
+    the inputs, outputs and an example run. Include the key library calls a practitioner would actually use.
+### 复杂度与性能 — time and memory complexity, numeric stability, and what dominates the cost in practice.
+### 边界情况与常见坑 — edge cases, failure modes and typical mistakes, each with how to detect and fix it.
+### 测试与验证 — how to check the result is correct: test cases, sanity checks, metrics.
+### 工程取舍与替代方案 — alternatives, when to choose which, and real-world usage.
+### 延伸 — likely follow-up questions from the lecturer or an interviewer, with brief answers.
+
+For a screenshot: first restate the question under "### 题目" (translated into Chinese, keeping options, code and
+formulas unchanged), then the sections above. If several questions are shown, cover every one.
+Be precise; when something depends on assumptions, state them. Do not pad with generic advice."""
+
 DETAILED = "\n- This time give a fuller explanation (up to about 150 words), still starting with the direct answer."
 
 def code_rule(language: str) -> str:
@@ -64,6 +85,7 @@ REMINDER_BEFORE = "【请用简体中文回答，不要用英文】\n\n"
 REMINDER_AFTER = "\n\n请用简体中文回答。"
 STRICT = ("【最高优先级】上一次你用英文作答，这是错误的。这一次必须完整地用简体中文作答，"
           "只有代码、公式和括号里的术语原词可以是英文。\n\n")
+TRUNCATED = "\n\n> （内容达到长度上限，后面被截断了。可以再按一次生成，或在 config.yaml 里调大 engineer_max_tokens。）"
 RESTART = object()          # yielded by Answerer.stream: drop the text so far, a Chinese answer follows
 
 CJK = re.compile(r"[\u4e00-\u9fff]")
@@ -85,9 +107,12 @@ def format_history(history) -> str:
 
 
 def build_prompt(question: str, transcript: str, notes: str, detailed=False, history=(), screen_text=None,
-                 has_images=False, strict=False, code_language=""):
+                 has_images=False, strict=False, code_language="", engineer=False, previous=""):
     on_screen = has_images or bool(screen_text)
-    system = (SCREENSHOT if on_screen else SYSTEM + (DETAILED if detailed else "")) + code_rule(code_language)
+    if engineer:
+        system = ENGINEER + code_rule(code_language)
+    else:
+        system = (SCREENSHOT if on_screen else SYSTEM + (DETAILED if detailed else "")) + code_rule(code_language)
     blocks = [system]
     if notes:
         blocks.append(f"<course_notes>\n{notes}\n</course_notes>")
@@ -104,6 +129,10 @@ def build_prompt(question: str, transcript: str, notes: str, detailed=False, his
                  + ". Extract the question or content and answer it fully.")
     else:
         user += f"The lecturer just asked: \"{question}\""
+    if engineer:
+        if previous.strip():
+            user += f"\n\n<short_answer_already_given>\n{previous.strip()}\n</short_answer_already_given>"
+        user += "\n\nNow write the exhaustive engineering-grade answer described in the instructions."
     user = (STRICT if strict else REMINDER_BEFORE) + user + REMINDER_AFTER
     return blocks, user
 
@@ -143,10 +172,12 @@ class Answerer:
         return self._openai
 
     async def stream(self, question, transcript, notes, deep=False, history=(), images=(),
-                     screen_text=None) -> AsyncIterator:
-        """Stream the answer; if it comes out in English, yield RESTART and stream a Chinese one instead."""
+                     screen_text=None, engineer=False, previous="") -> AsyncIterator:
+        """Stream the answer; if it comes out in English, yield RESTART and stream a Chinese one instead.
+        engineer=True: the long engineering-grade answer (Cmd+X), built on the short answer `previous`."""
         text, chinese = "", False
-        first = self._stream_once(question, transcript, notes, deep, history, images, screen_text)
+        extra = {"engineer": True, "previous": previous} if engineer else {}
+        first = self._stream_once(question, transcript, notes, deep, history, images, screen_text, **extra)
         try:
             async for delta in first:
                 yield delta
@@ -163,11 +194,11 @@ class Answerer:
             await first.aclose()
         yield RESTART
         async for delta in self._stream_once(question, transcript, notes, deep, history, images, screen_text,
-                                             strict=True):
+                                             strict=True, **extra):
             yield delta
 
     async def _stream_once(self, question, transcript, notes, deep=False, history=(), images=(),
-                           screen_text=None, strict=False) -> AsyncIterator[str]:
+                           screen_text=None, strict=False, engineer=False, previous="") -> AsyncIterator[str]:
         from .screenshot import b64, ocr_many
         model = self.s.llm_deep_model if deep else self.s.llm_model
         images = list(images or [])
@@ -179,10 +210,16 @@ class Answerer:
             model = self.s.llm_vision_model                   # the text model cannot see pictures
         blocks, user = build_prompt(question, transcript, notes, detailed=deep or self.s.answer_style == "detailed",
                                     history=history, screen_text=screen_text, has_images=bool(send_images),
-                                    strict=strict, code_language=getattr(self.s, "code_language", ""))
+                                    strict=strict, code_language=getattr(self.s, "code_language", ""),
+                                    engineer=engineer, previous=previous)
         max_tokens = self.s.max_tokens * (2 if deep else 1)
         if images:
             max_tokens = max(max_tokens, self.s.shot_max_tokens)      # screenshots get full-length answers
+        # Engineering-grade answers skip reasoning by default: measured with DeepSeek, reasoning took ~2 min before
+        # the first word and used most of the token budget, so the answer itself was cut short.
+        think = deep and (not engineer or self.s.engineer_thinking)
+        if engineer:
+            max_tokens = max(max_tokens, self.s.engineer_max_tokens, 32000 if think else 0)
         client = self._client()
         if self.s.llm == "anthropic":
             # Notes are a stable prefix: cache them so repeated questions start faster and cost less.
@@ -194,12 +231,14 @@ class Answerer:
                                               messages=[{"role": "user", "content": content}]) as stream:
                 async for text in stream.text_stream:
                     yield text
+                if (await stream.get_final_message()).stop_reason == "max_tokens":
+                    yield TRUNCATED
         else:
             extra = {}
-            body = thinking_options(self.s.llm, deep)
+            body = thinking_options(self.s.llm, think)
             if body:
                 extra["extra_body"] = body
-                if deep:
+                if think:
                     max_tokens = max(max_tokens, 4000)       # reasoning tokens count towards the limit
             response = await client.chat.completions.create(
                 model=model, max_tokens=max_tokens, stream=True,
@@ -211,6 +250,8 @@ class Answerer:
             async for chunk in response:
                 if chunk.choices and chunk.choices[0].delta and chunk.choices[0].delta.content:
                     yield chunk.choices[0].delta.content
+                if chunk.choices and getattr(chunk.choices[0], "finish_reason", None) == "length":
+                    yield TRUNCATED
 
     async def warmup(self):
         """Open the HTTPS connection early so the first real answer is not slowed by TLS setup."""

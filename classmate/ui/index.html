@@ -94,6 +94,10 @@
   .foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; color: var(--muted);
           font: 11.5px var(--mono); }
   .foot button { font-size: 12px; padding: 2px 8px; }
+  .extra { margin-top: 12px; border: 1px dashed var(--accent); border-radius: 10px; padding: 10px 12px;
+           background: var(--accent-soft); }
+  .extra .xh { font: 600 12px var(--mono); color: var(--accent); margin-bottom: 6px; }
+  .extra .foot { margin-top: 8px; }
   .empty { color: var(--muted); padding: 22px 4px; line-height: 1.9; }
   kbd { font: 11px var(--mono); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px;
         background: var(--panel); }
@@ -178,7 +182,8 @@
       <kbd data-k="capture">Ctrl</kbd> <span id="helpcap">按一下开始录音，再按一下立即回答</span> · <kbd data-k="append">`</kbd> 追加到当前问题<br>
       <kbd data-k="answer_now">Space</kbd> 立即回答 · <kbd data-k="cancel">Esc</kbd> 放弃收录 · <kbd data-k="deep">D</kbd> 深度回答 · <kbd data-k="copy">C</kbd> 复制<br>
       <kbd data-k="prev">⇧↑</kbd><kbd data-k="next">⇧↓</kbd> 上一题 / 下一题 · <kbd>↑↓←→</kbd> 移动窗口（<kbd>⌥</kbd> 微调）<br>
-      <kbd data-k="list">L</kbd> 显示/隐藏问题列表 · <kbd data-k="mode">M</kbd> 每段话 / 仅提问 · <kbd data-k="transcript">T</kbd> 转写 · <kbd data-k="ask">/</kbd> 打字提问 · <kbd data-k="settings">⌘,</kbd> 设置
+      <kbd data-k="list">L</kbd> 显示/隐藏问题列表 · <kbd data-k="mode">M</kbd> 每段话 / 仅提问 · <kbd data-k="transcript">T</kbd> 转写 · <kbd data-k="ask">/</kbd> 打字提问 · <kbd data-k="settings">⌘,</kbd> 设置<br>
+      <kbd data-k="engineer">⌘X</kbd> 工程化详解：在当前回答下面新加一个超详细的回答（原理、完整代码、复杂度、边界情况…），原回答保留
     </div>
     <div id="drawer" class="hidden">
       <div class="bar" id="drawerbar"><span id="drawerarrow">▸</span> 实时转写 <span class="meta" id="meta"></span></div>
@@ -265,10 +270,12 @@
 const $ = (id) => document.getElementById(id);
 let ws, st = {}, step = 40;
 let keys = {screenshot: 'tab', region: 'shift+tab', capture: 'ctrl', append: '`', answer_now: 'space', cancel: 'escape', deep: 'd', copy: 'c', mode: 'm',
-            list: 'l', transcript: 't', ask: '/', help: '?', prev: 'shift+up', next: 'shift+down', settings: /Mac/.test(navigator.platform) ? 'cmd+,' : 'alt+,'};
+            list: 'l', transcript: 't', ask: '/', help: '?', prev: 'shift+up', next: 'shift+down', settings: /Mac/.test(navigator.platform) ? 'cmd+,' : 'alt+,',
+            engineer: /Mac/.test(navigator.platform) ? 'cmd+x' : 'alt+x'};
 const ACTIONS = {screenshot: '截图并回答', region: '框选区域截图', capture: '录音提问（用法见上）', append: '追加到当前问题（按一下开始，再按结束）', answer_now: '立即回答', cancel: '放弃收录',
                  deep: '深度回答', copy: '复制答案', prev: '上一题', next: '下一题', mode: '切换 每段话 / 仅提问',
-                 list: '显示 / 隐藏问题列表', transcript: '展开实时转写', ask: '打字提问', help: '显示快捷键', settings: '打开设置'};
+                 list: '显示 / 隐藏问题列表', transcript: '展开实时转写', ask: '打字提问', help: '显示快捷键', settings: '打开设置',
+                 engineer: '工程化详解（在当前回答下面新加一个框）'};
 const MOD = {Control: 'ctrl', Alt: 'alt', Shift: 'shift', Meta: 'cmd'};
 // Chinese input method: the key may report "Process" or a full-width character (· for `, 、 for /)
 const CODE_SYMBOLS = {Backquote: '`', Minus: '-', Equal: '=', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
@@ -369,15 +376,32 @@ function drawCard() {
   $('pos').textContent = `Q${i + 1} / ${order.length}`;
   $('newer').classList.toggle('show', view >= 0 && view < order.length - 1);
   const foot = q.done ? `<span>首字 ${(q.done.first_token_ms/1000).toFixed(1)}s · 完成 ${(q.done.total_ms/1000).toFixed(1)}s</span>
-      <button onclick="deep(${id})">深度回答 D</button><button onclick="copy(${id})">复制 C</button>`
+      <button onclick="deep(${id})">深度回答 D</button><button onclick="copy(${id})">复制 C</button>
+      <button onclick="engineer(${id})">工程详解 ${esc(pretty(keys.engineer))}</button>`
     : (q.error ? `<span>出错：${esc(q.error)}</span>` : `<span>${esc(q.model)} · 生成中…</span>`);
   const shots = q.images.length ? `<div class="shots">${q.images.map(u => `<img src="${u}" onclick="this.classList.toggle('big')">`).join('')}</div>` : '';
   const heading = q.images.length && q.question === q.title ? '' : esc(q.question);
   $('cardwrap').innerHTML = `<div class="card ${i === order.length - 1 ? 'latest' : ''}">
     <div class="q">${q.images.length ? esc(q.title) + (heading ? ' · ' : '') : ''}${heading}<small>${q.source}${q.deep ? ' · deep' : ''}</small></div>
     ${shots}${q.ocr ? `<details class="ocr"><summary>识别到的文字（发给模型的内容）</summary><pre>${esc(q.ocr)}</pre></details>` : ''}<div class="a ${q.text ? '' : 'wait'}">${q.text ? render(q.text) : '…'}</div>
-    <div class="foot">${foot}</div></div>`;
+    <div class="foot">${foot}</div>${q.extras.map(x => drawExtra(id, x)).join('')}</div>`;
 }
+function drawExtra(id, x) {        // an engineering-grade answer (Cmd+X), below the short answer
+  const sec = (ms) => (ms / 1000).toFixed(1);
+  const state = x.error ? `出错：${esc(x.error)}` : x.done ? `首字 ${sec(x.done.first_token_ms)}s · 完成 ${sec(x.done.total_ms)}s`
+    : `${esc(x.model)} · 生成中…（内容很长，需要一点时间）`;
+  return `<div class="extra"><div class="xh">工程化详解 ${x.n} · ${state}</div>
+    <div class="a ${x.text ? '' : 'wait'}">${x.text ? render(x.text) : '思考中…'}</div>
+    ${x.done ? `<div class="foot"><button onclick="copyExtra(${id}, ${x.n})">复制详解</button></div>` : ''}</div>`;
+}
+let drawPending = false;
+function drawCardSoon() {         // long answers: re-render at most once per frame
+  if (drawPending) return;
+  drawPending = true;
+  requestAnimationFrame(() => { drawPending = false; drawCard(); });
+}
+function engineer(id) { send({cmd: 'engineer', id}); }
+function copyExtra(id, n) { const x = qa.get(id).extras.find(e => e.n === n); if (x) navigator.clipboard?.writeText(x.text); }
 function draw() { drawCard(); drawList(); }
 function deep(id) { send({cmd: 'deep', id}); view = -1; }
 function copy(id) { navigator.clipboard?.writeText(qa.get(id).text); }
@@ -446,7 +470,8 @@ function handle(m) {
   } else if (m.type === 'question') {
     const prev = qa.get(m.id);
     qa.set(m.id, {question: m.text, title: m.title || m.text, source: m.replace ? m.source + ' · 已补充' : m.source,
-                  deep: m.deep, model: m.model, images: m.images || [], text: '', done: null});
+                  deep: m.deep, model: m.model, images: m.images || [], text: '', done: null,
+                  extras: prev ? prev.extras : []});      // engineering-grade answers are never replaced
     if (!prev) order.push(m.id);
     draw();
   } else if (m.type === 'answer_delta') {
@@ -456,6 +481,18 @@ function handle(m) {
   } else if (m.type === 'ocr') {
     const q = qa.get(m.id); if (!q) return; q.ocr = m.text;
     if (order[currentIndex()] === m.id) drawCard();
+  } else if (m.type.startsWith('extra_')) {       // engineering-grade answer n of question m.id
+    const q = qa.get(m.id); if (!q) return;
+    let x = q.extras.find(e => e.n === m.n);
+    if (m.type === 'extra_start') {
+      if (!x) { x = {n: m.n}; q.extras.push(x); q.extras.sort((a, b) => a.n - b.n); }
+      Object.assign(x, {model: m.model, text: '', done: null, error: null});
+    } else if (!x) return;
+    else if (m.type === 'extra_delta') x.text += m.text;
+    else if (m.type === 'extra_reset') x.text = '';
+    else if (m.type === 'extra_done') x.done = m;
+    else if (m.type === 'extra_error') x.error = m.message;
+    if (order[currentIndex()] === m.id) drawCardSoon();
   } else if (m.type === 'answer_reset') {        // came out in English: the Chinese answer replaces it
     const q = qa.get(m.id); if (!q) return; q.text = '';
     if (order[currentIndex()] === m.id) drawCard();
@@ -640,6 +677,7 @@ const RUN = {
   prev: () => browse(-1),
   next: () => browse(1),
   settings: openSettings,
+  engineer: () => { if (order.length) engineer(order[currentIndex()]); },
 };
 const capLone = () => ORDER.includes(keys.capture);       // capture key is a single modifier (default Ctrl)
 let capHeld = false, capUsed = false;     // capUsed: another key went down meanwhile (Ctrl+C is not a tap)

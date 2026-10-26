@@ -59,6 +59,7 @@ This is an open-source project: the code keeps out people who simply download an
 - **Preferred programming language**: choose one in the settings (Python, Java, C++, ... or type your own). Code written from scratch uses it; fixes to code given in the question keep that code's language.
 - **Answers stay in Chinese**: if a model starts answering in English anyway, the answer is discarded and regenerated in Chinese automatically.
 - **Deeper answer**: press D for a fuller explanation from a stronger model with reasoning enabled.
+- **Engineering-grade answer**: press Cmd+X (Alt+X on Windows) for an exhaustive answer to the current question in a new box below it: conclusion, theory and derivation, complete runnable code, complexity, edge cases and pitfalls, testing, trade-offs and follow-up questions. It takes a minute or two, the first words appear within a few seconds, and nothing is replaced: the short answer and earlier engineering-grade answers stay. It runs without reasoning by default so the whole token budget (`engineer_max_tokens`, 16000) goes into the answer; set `engineer_thinking: true` in `config.yaml` for more deliberate (but much slower) answers.
 - **Course notes**: PDF, PPTX, DOCX, Markdown, TXT or whole folders. The notes are sent with prompt caching, so later answers are faster and cheaper.
 - **Follow-up questions**: the last 6 questions and answers are sent along, so follow-ups such as "how is that different from the previous one" make sense.
 - **Session log**: every lecture's transcript and answers are saved to `sessions/<date>_<time>.md`.
@@ -81,6 +82,7 @@ The app is a small native Mac window (760x620 by default); start with `--browser
 | Shift+Tab | Select a screen region to capture, then answer it |
 | Space | Answer what was just said right away |
 | D / C | Deeper answer for the current question / copy the answer |
+| Cmd+X (Windows: Alt+X) | Engineering-grade answer in a new box below the current answer (only while the ClassMate window has focus) |
 | Shift+Up / Shift+Down | Previous / next question |
 | Arrow keys | Move the window by 40 px (with Option: 10 px) |
 | L | Show / hide the question list |
@@ -182,7 +184,7 @@ ClassMate is meant to help you follow a lecture, understand questions and organi
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 85 tests
+pytest -q          # 88 tests
 ```
 
 | File | Purpose |

@@ -579,6 +579,9 @@ async def test_image_content_and_ocr_paths(tmp_path, monkeypatch):
         async def __aexit__(self, *a):
             return False
 
+        async def get_final_message(self):
+            return type("Message", (), {"stop_reason": "end_turn"})()
+
     use_key(monkeypatch, "ANTHROPIC_API_KEY", "x")
     a = llm_mod.Answerer(Settings(llm="anthropic"))
     a._anthropic = type("C", (), {"messages": type("M", (), {"stream": lambda self, **kw: Stream(**kw)})()})()
@@ -1233,3 +1236,84 @@ def test_windows_window_settings(monkeypatch):
     api.apply()
     api.set_hidden_from_capture(False)
     assert calls == [("opacity", 4242, 0.7), ("hide", 4242, True), ("hide", 4242, False)]
+
+
+# ---------------- Cmd+X engineering-grade answers ----------------
+async def test_engineering_answer_is_added_below_and_never_replaces(tmp_path):
+    calls, gate = [], asyncio.Event()
+
+    class Answerer:
+        async def stream(self, question, transcript, notes, deep=False, history=(), images=(), engineer=False,
+                         previous=""):
+            calls.append({"q": question, "deep": deep, "engineer": engineer, "previous": previous})
+            if engineer:
+                await gate.wait()
+                yield f"详解{len(calls)}"
+            else:
+                yield f"简短回答：{question}"
+    session = Session(Settings(session_dir=str(tmp_path)), lambda: None, asr=ScriptedASR(), answerer=Answerer())
+    events = []
+
+    async def capture(e):
+        events.append(e)
+    session.broadcast = capture
+    qid = session.ask("What is the ratio test", source="typed")
+    await session._answers[qid]
+    assert session.engineer(qid) == 1
+    assert session.engineer(qid) is None                      # still writing: a double press is ignored
+    await settle()
+    assert calls[-1] == {"q": "What is the ratio test", "deep": True, "engineer": True,
+                         "previous": "简短回答：What is the ratio test"}
+    gate.set()
+    await session._extras[qid]
+    assert session.engineer(qid) == 2                         # another box, the first one stays
+    await session._extras[qid]
+    assert session.answers[qid] == "简短回答：What is the ratio test"   # the short answer is untouched
+    # extending the question regenerates the short answer but keeps both engineering-grade answers
+    session.ask("What is the ratio test and why 0.8", source="ctrl", qid=qid)
+    await session._answers[qid]
+    replay = session.replay()
+    starts = [e["n"] for e in replay if e["type"] == "extra_start"]
+    texts = {e["n"]: e["text"] for e in replay if e["type"] == "extra_delta"}
+    assert starts == [1, 2] and texts[1].startswith("详解") and texts[2].startswith("详解")
+    assert [e["type"] for e in replay].count("extra_done") == 2
+    assert any(e["type"] == "answer_delta" and "why 0.8" in e["text"] for e in replay)
+
+
+async def test_engineering_prompt_and_budget(monkeypatch):
+    from classmate.llm import ENGINEER, Answerer
+    blocks, user = build_prompt("What is RANSAC?", "", "", engineer=True, previous="A robust fitting method.",
+                                code_language="Python")
+    assert blocks[0].startswith(ENGINEER) and "in Python" in blocks[0] and "### 工程实现" in blocks[0]
+    assert "<short_answer_already_given>" in user and "A robust fitting method." in user
+    assert user.endswith("请用简体中文回答。")
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "k")
+    a, seen = Answerer(load_settings(None, llm="deepseek")), []
+    a._openai = fake_openai(seen)
+    _ = [t async for t in a.stream("What is RANSAC?", "", "", deep=True, engineer=True, previous="x")]
+    assert seen[0]["model"] == "deepseek-v4-pro" and seen[0]["max_tokens"] == 16000
+    assert seen[0]["extra_body"]["thinking"]["type"] == "disabled"     # reasoning would eat the budget
+    a.s.engineer_thinking = True
+    _ = [t async for t in a.stream("What is RANSAC?", "", "", deep=True, engineer=True, previous="x")]
+    assert seen[1]["max_tokens"] == 32000 and seen[1]["extra_body"]["thinking"]["type"] == "enabled"
+    _ = [t async for t in a.stream("What is RANSAC?", "", "", deep=True)]
+    assert seen[2]["extra_body"]["thinking"]["type"] == "enabled"      # the D deep answer still reasons
+    from classmate.config import DEFAULT_KEYS
+    import sys
+    assert DEFAULT_KEYS["engineer"] == ("cmd+x" if sys.platform == "darwin" else "alt+x")
+
+
+async def test_truncated_answer_says_so(monkeypatch):
+    from classmate.llm import TRUNCATED, Answerer
+    use_key(monkeypatch, "DEEPSEEK_API_KEY", "k")
+    a = Answerer(load_settings(None, llm="deepseek"))
+
+    class Completions:
+        async def create(self, **kw):
+            async def gen():
+                delta = type("D", (), {"content": "单应性的推导" * 10})()
+                yield type("Ch", (), {"choices": [type("C", (), {"delta": delta, "finish_reason": "length"})()]})()
+            return gen()
+    a._openai = type("Client", (), {"chat": type("Chat", (), {"completions": Completions()})()})()
+    out = "".join([t async for t in a.stream("Q", "", "", deep=True, engineer=True)])
+    assert out.endswith(TRUNCATED)

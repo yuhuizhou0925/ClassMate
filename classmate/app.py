@@ -89,6 +89,8 @@ class Session:
         self._recent_questions: dict[str, float] = {}
         self._listen_task = None
         self._answers: dict[int, asyncio.Task] = {}
+        self._extras: dict[int, asyncio.Task] = {}   # qid -> engineering-grade answer (Cmd+X) being written
+        self.extra_count: dict[int, int] = {}        # qid -> how many engineering-grade answers it has
         self.questions: dict[int, str] = {}
         self.segments: dict[int, list[str]] = {}     # qid -> spoken pieces of the question
         self.answers: dict[int, str] = {}            # qid -> latest complete answer text
@@ -498,8 +500,8 @@ class Session:
         self.segments[qid] = list(pieces or ([question] if question else []))
         if not deep:
             self.last_qid = qid
-        if replace:
-            self.history[qid] = []
+        if replace:                                # keep the engineering-grade answers already written
+            self.history[qid] = [e for e in self.history.get(qid, []) if e["type"].startswith("extra_")]
         task = asyncio.create_task(self._answer(qid, question, source, t0 or now, deep, replace, images))
         self._answers[qid] = task
 
@@ -528,13 +530,21 @@ class Session:
         events = []
         for qid in sorted(self.history)[-50:]:
             items = self.history[qid]
-            if not items:
+            question = next((e for e in items if e["type"] == "question"), None)
+            if question is None:
                 continue
             text = "".join(e["text"] for e in items if e["type"] == "answer_delta")
-            events.append(items[0])
+            events.append(question)          # not items[0]: kept engineering-grade answers may come first
             if text:
                 events.append({"type": "answer_delta", "id": qid, "text": text})
             events += [e for e in items if e["type"] in ("ocr", "answer_done", "error")]
+            for start in (e for e in items if e["type"] == "extra_start"):    # engineering-grade answers below
+                n = start["n"]
+                events.append(start)
+                extra = "".join(e["text"] for e in items if e["type"] == "extra_delta" and e["n"] == n)
+                if extra:
+                    events.append({"type": "extra_delta", "id": qid, "n": n, "text": extra})
+                events += [e for e in items if e["type"] in ("extra_done", "extra_error") and e["n"] == n]
         return events
 
     async def _answer(self, qid, question, source, t0, deep, replace=False, images=()):
@@ -547,16 +557,9 @@ class Session:
         history = self.prior_qa(qid)
         parts, first = [], None
         try:
-            screen_text = None
-            if images:
-                from .llm import vision_mode
-                from .screenshot import ocr_many
-                if vision_mode(self.s) == "ocr":
-                    screen_text = self.ocr_cache.get(tuple(map(str, images)))
-                    if screen_text is None:
-                        screen_text = await ocr_many(images)
-                        self.ocr_cache[tuple(map(str, images))] = screen_text
-                    await self._emit_qa(qid, {"type": "ocr", "id": qid, "text": screen_text})
+            screen_text = await self.screen_text(images)
+            if screen_text is not None:
+                await self._emit_qa(qid, {"type": "ocr", "id": qid, "text": screen_text})
             kwargs = {"screen_text": screen_text} if screen_text is not None else {}
             async for delta in self.answerer.stream(question, transcript, self.notes, deep=deep, history=history,
                                                     images=images, **kwargs):
@@ -583,6 +586,62 @@ class Session:
         shots_md = "".join(f"\n> ![screenshot]({self.shot_dir.name}/{Path(p).name})" for p in images)
         self.write_log(f"\n> **Q{qid} ({source}{', deep' if deep else ''}{', extended' if replace else ''}):** "
                        f"{question or '(screenshot)'}{shots_md}\n>\n> " + "".join(parts).replace("\n", "\n> ") + "\n")
+
+    async def screen_text(self, images):
+        """On-device OCR text of the screenshots when the model gets text instead of pictures (cached)."""
+        from .llm import vision_mode
+        from .screenshot import ocr_many
+        if not images or vision_mode(self.s) != "ocr":
+            return None
+        key = tuple(map(str, images))
+        if key not in self.ocr_cache:
+            self.ocr_cache[key] = await ocr_many(images)
+        return self.ocr_cache[key]
+
+    def engineer(self, qid: int):
+        """Cmd+X: an exhaustive, engineering-grade answer to this question in a new box below its answer.
+        Nothing is replaced: the short answer and earlier engineering-grade answers stay. A press while one
+        is still being written is ignored (an accidental double press would pay for two long answers)."""
+        running = self._extras.get(qid)
+        if running and not running.done():
+            return None
+        n = self.extra_count[qid] = self.extra_count.get(qid, 0) + 1
+        self._extras[qid] = asyncio.create_task(self._engineer(qid, n))
+        return n
+
+    async def _engineer(self, qid: int, n: int):
+        t0 = time.time()
+        question, images = self.questions[qid], self.qimages.get(qid, [])
+        model = self.s.llm_vision_model if images and self.s.llm_vision_model else self.s.llm_deep_model
+        await self._emit_qa(qid, {"type": "extra_start", "id": qid, "n": n, "model": model})
+        parts, first = [], None
+        try:
+            screen_text = await self.screen_text(images)
+            kwargs = {"screen_text": screen_text} if screen_text is not None else {}
+            async for delta in self.answerer.stream(question, self.transcript.window(self.s.context_minutes),
+                                                    self.notes, deep=True, history=self.prior_qa(qid), images=images,
+                                                    engineer=True, previous=self.answers.get(qid, ""), **kwargs):
+                if delta is RESTART:
+                    parts.clear()
+                    self.history[qid] = [e for e in self.history.get(qid, [])
+                                         if not (e["type"] == "extra_delta" and e["n"] == n)]
+                    await self._emit_qa(qid, {"type": "extra_reset", "id": qid, "n": n})
+                    continue
+                first = first or time.time()
+                parts.append(delta)
+                await self._emit_qa(qid, {"type": "extra_delta", "id": qid, "n": n, "text": delta})
+        except asyncio.CancelledError:
+            raise
+        except Exception as error:
+            log.exception("engineering answer error")
+            await self._emit_qa(qid, {"type": "extra_error", "id": qid, "n": n,
+                                      "message": f"工程化详解生成失败：{error}"})
+            return
+        done = time.time()
+        await self._emit_qa(qid, {"type": "extra_done", "id": qid, "n": n,
+                                  "first_token_ms": round(((first or done) - t0) * 1000),
+                                  "total_ms": round((done - t0) * 1000)})
+        self.write_log(f"\n> **Q{qid} 工程化详解 {n}：**\n>\n> " + "".join(parts).replace("\n", "\n> ") + "\n")
 
     def answer_now(self):
         """Manual trigger: the capture if any, else the live partial text, else the last turns."""
@@ -612,6 +671,8 @@ class Session:
                 await self.stop()                  # same as the second Ctrl tap
         elif cmd == "ask" and msg.get("text", "").strip():
             self.ask(msg["text"].strip(), source="typed")
+        elif cmd == "engineer" and msg.get("id") in self.questions:
+            self.engineer(msg["id"])
         elif cmd == "deep" and msg.get("id") in self.questions:
             qid = msg["id"]
             self.ask(self.questions[qid], source="deep", deep=True, images=self.qimages.get(qid),

@@ -82,9 +82,25 @@ SHOT_ANSWER = (
     "```python\nH = K @ R @ np.linalg.inv(K)   # 把图 1 变换到图 2\n```")
 
 
+ENGINEER_ANSWER = (
+    "### 核心结论\n比值检验（ratio test）只保留“最近邻距离明显小于次近邻距离”的匹配，用一个相对阈值剔除模糊匹配。\n\n"
+    "### 原理与推导\n设描述子 d 的最近邻距离为 d1、次近邻为 d2，保留条件为 d1 / d2 < r（常取 0.7–0.8）。"
+    "正确匹配的 d1 远小于 d2；重复纹理会让 d1 ≈ d2，比值接近 1。\n\n"
+    "### 工程实现\n```python\nimport cv2\n\ndef ratio_match(desc1, desc2, ratio=0.75):\n"
+    "    matcher = cv2.BFMatcher(cv2.NORM_L2)\n    pairs = matcher.knnMatch(desc1, desc2, k=2)\n"
+    "    return [m for m, n in pairs if m.distance < ratio * n.distance]\n```\n\n"
+    "### 复杂度与性能\n暴力匹配 O(N·M·D)；描述子多时改用 FLANN（KD 树）近似最近邻。\n\n"
+    "### 边界情况与常见坑\n- 候选少于 2 个时 knnMatch 返回不足两项，需要先过滤\n- 二进制描述子（ORB）要用 NORM_HAMMING\n\n"
+    "### 测试与验证\n用已知单应性合成一对图像，统计内点率。\n\n"
+    "### 工程取舍与替代方案\n交叉验证（cross-check）更严格但更慢；学习型匹配器（SuperGlue）效果更好但需要 GPU。")
+
+
 class DemoAnswerer:
-    async def stream(self, question, transcript, notes, deep=False, history=(), images=()):
-        if images:
+    async def stream(self, question, transcript, notes, deep=False, history=(), images=(), engineer=False,
+                     previous=""):
+        if engineer:
+            text = ENGINEER_ANSWER
+        elif images:
             text = SHOT_ANSWER
         else:
             text = ANSWERS["homography" if "homography" in question.lower() else "ratio"]

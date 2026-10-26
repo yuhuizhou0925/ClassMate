@@ -43,10 +43,12 @@ DEFAULT_KEYS = {
     "transcript": "t", "ask": "/", "help": "?", "prev": "shift+up", "next": "shift+down",
     # Cmd+, on a Mac; Windows has no Cmd key and a lone Ctrl already records, so Alt+, there
     "settings": "cmd+," if sys.platform == "darwin" else "alt+,",
+    "engineer": "cmd+x" if sys.platform == "darwin" else "alt+x",     # Win+X opens a system menu on Windows
 }
 KEY_LABELS = {"screenshot": "截图", "region": "框选截图", "capture": "录音提问", "append": "追加到当前问题", "answer_now": "立即回答", "cancel": "放弃收录", "deep": "深度回答",
               "copy": "复制答案", "mode": "切换模式", "list": "问题列表", "transcript": "实时转写", "ask": "打字提问",
-              "help": "快捷键帮助", "prev": "上一题", "next": "下一题", "settings": "打开设置"}
+              "help": "快捷键帮助", "prev": "上一题", "next": "下一题", "settings": "打开设置",
+              "engineer": "工程化详解"}
 MODIFIERS = ("ctrl", "alt", "shift", "cmd")
 KEY_ALIASES = {"control": "ctrl", "option": "alt", "opt": "alt", "command": "cmd", "meta": "cmd", "esc": "escape",
                "return": "enter", "arrowup": "up", "arrowdown": "down", "arrowleft": "left", "arrowright": "right",
@@ -156,6 +158,8 @@ class Settings:
     max_shots: int = 3                      # screenshots kept for one question
     shot_max_side: int = 1568               # downscale before sending
     shot_max_tokens: int = 3000             # screenshot answers can be long (full solutions, code, explanations)
+    engineer_max_tokens: int = 16000        # Cmd+X engineering-grade answer: exhaustive, latency does not matter
+    engineer_thinking: bool = False         # reasoning for Cmd+X answers: more deliberate, but ~2 min to first word
     vision: str = "auto"                    # auto | image (send pictures) | ocr (on-device text recognition)
 
     API_ENV = {**ASR_PROVIDERS, **{name: p["env"] for name, p in PROVIDERS.items()}}
