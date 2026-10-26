@@ -1284,7 +1284,8 @@ async def test_engineering_prompt_and_budget(monkeypatch):
     from classmate.llm import ENGINEER, Answerer
     blocks, user = build_prompt("What is RANSAC?", "", "", engineer=True, previous="A robust fitting method.",
                                 code_language="Python")
-    assert blocks[0].startswith(ENGINEER) and "in Python" in blocks[0] and "### 工程实现" in blocks[0]
+    assert blocks[0].startswith(ENGINEER) and "in Python" in blocks[0]
+    assert blocks[0].index("### 工程方案") < blocks[0].index("### 方案解释")      # the plan first, then why
     assert "<short_answer_already_given>" in user and "A robust fitting method." in user
     assert user.endswith("请用简体中文回答。")
     use_key(monkeypatch, "DEEPSEEK_API_KEY", "k")
@@ -1317,3 +1318,95 @@ async def test_truncated_answer_says_so(monkeypatch):
     a._openai = type("Client", (), {"chat": type("Chat", (), {"completions": Completions()})()})()
     out = "".join([t async for t in a.stream("Q", "", "", deep=True, engineer=True)])
     assert out.endswith(TRUNCATED)
+
+
+# ---------------- computer sound first, microphone when it is silent ----------------
+def tone(level, n=800):
+    import numpy as np
+    return (np.sin(np.arange(n) / 3) * level * 32767 * 1.414).astype(np.int16).tobytes()
+
+
+def test_mixer_prefers_computer_sound_then_mic_then_silence():
+    from classmate.audio import MixedSource
+    m = MixedSource(None, None, hangover=0.8)
+    quiet, lecturer, me = tone(0.0005), tone(0.05), tone(0.08)
+    t = 100.0
+    for _ in range(20):                                    # learn the room's noise floor
+        assert m.choose(quiet, bytes(1600), t)[1] == "silence"
+        t += 0.05
+    chunk, src = m.choose(me, lecturer, t)                 # lecturer playing: computer sound wins
+    assert src == "system" and chunk == lecturer
+    assert m.choose(quiet, bytes(1600), t + 0.5)[1] == "system"      # short pause: keep listening to it
+    t += 1.0
+    chunk, src = m.choose(me, bytes(1600), t)             # computer silent, you speak: microphone
+    assert src == "mic" and chunk == me
+    assert m.choose(quiet, bytes(1600), t + 0.5)[1] == "mic"
+    chunk, src = m.choose(quiet, bytes(1600), t + 1.0)
+    assert src == "silence" and chunk == bytes(1600)       # room noise is not sent
+
+
+def test_mixer_ignores_steady_room_noise():
+    from classmate.audio import MixedSource
+    m = MixedSource(None, None)
+    noisy_room = tone(0.03)                                # above the fixed threshold, but constant
+    t, used = 0.0, []
+    for _ in range(200):
+        used.append(m.choose(noisy_room, bytes(1600), t)[1])
+        t += 0.05
+    assert used[-1] == "silence" and used[-40:].count("mic") == 0
+    assert m.choose(tone(0.2), bytes(1600), t)[1] == "mic"   # speaking clearly above it still counts
+
+
+async def test_mixed_source_streams_and_falls_back(tmp_path):
+    from classmate.audio import MixedSource
+
+    class Fake:
+        def __init__(self, chunks, fail=False):
+            self.chunks, self.fail, self.stopped = chunks, fail, False
+
+        async def start(self, q):
+            if self.fail:
+                raise RuntimeError("没有“屏幕录制”权限")
+            for c in self.chunks:
+                q.put_nowait(c)
+
+        async def stop(self):
+            self.stopped = True
+    lecturer = tone(0.05)
+    out = asyncio.Queue()
+    switches = []
+    mixed = MixedSource(Fake([tone(0.0005)] * 3 + [None]), Fake([lecturer] * 3), on_switch=switches.append)
+    await mixed.start(out)
+    got = [await out.get() for _ in range(4)]
+    assert got[:3] == [lecturer] * 3 and got[3] is None and switches == ["system"]
+    await mixed.stop()
+    broken = MixedSource(Fake([tone(0.2), None]), Fake([], fail=True))
+    await broken.start(out)
+    assert "屏幕录制" in broken.system_error and await out.get() == tone(0.2)
+
+
+def test_resample_and_sample_buffer():
+    import sys
+    import numpy as np
+    from classmate.audio import resample
+    x = np.sin(np.arange(4800) / 48000 * 2 * np.pi * 440).astype(np.float32)
+    assert len(resample(x, 48000, 16000)) == 1600 and len(resample(x, 44100, 16000)) == int(4800 * 16000 / 44100)
+    if sys.platform != "darwin":
+        return
+    import CoreAudio as CA
+    import CoreMedia as C
+    from classmate.audio import pcm_from_sample_buffer
+    stereo = np.concatenate([x * 0.5, x * 0.5]).astype(np.float32)          # planar: left block, right block
+    raw = stereo.tobytes()
+    _, block = C.CMBlockBufferCreateWithMemoryBlock(None, None, len(raw), None, None, 0, len(raw), 0, None)
+    C.CMBlockBufferReplaceDataBytes(raw, block, 0, len(raw))
+    asbd = CA.AudioStreamBasicDescription()
+    asbd.mSampleRate, asbd.mFormatID = 48000.0, CA.kAudioFormatLinearPCM
+    asbd.mFormatFlags = CA.kAudioFormatFlagIsFloat | CA.kAudioFormatFlagIsPacked | CA.kAudioFormatFlagIsNonInterleaved
+    asbd.mBytesPerPacket = asbd.mBytesPerFrame = 4
+    asbd.mFramesPerPacket, asbd.mChannelsPerFrame, asbd.mBitsPerChannel = 1, 2, 32
+    _, fmt = C.CMAudioFormatDescriptionCreate(None, asbd, 0, None, 0, None, None, None)
+    _, sbuf = C.CMAudioSampleBufferCreateReadyWithPacketDescriptions(None, block, fmt, 4800, C.CMTimeMake(0, 48000),
+                                                                      None, None)
+    y, rate = pcm_from_sample_buffer(sbuf)
+    assert rate == 48000 and np.allclose(y, x * 0.5, atol=1e-6)

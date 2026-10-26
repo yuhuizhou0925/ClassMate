@@ -172,6 +172,8 @@ class Session:
             raise ValueError(f"Unknown speech provider {values.get('asr')!r}")
         if values.get("vision", s.vision) not in ("auto", "image", "ocr"):
             raise ValueError("vision must be auto, image or ocr")
+        if values.get("audio_source", s.audio_source) not in ("auto", "mic", "system"):
+            raise ValueError("audio_source must be auto, mic or system")
         if values.get("capture_style", s.capture_style) not in ("toggle", "hold"):
             raise ValueError("capture_style must be toggle or hold")
         if values.get("capture_style", s.capture_style) != s.capture_style:
@@ -440,8 +442,13 @@ class Session:
         while self.listening:
             queue: asyncio.Queue = asyncio.Queue(maxsize=400)
             source = self.source_factory()
+            if hasattr(source, "on_switch"):           # mixed source: show which one is heard
+                source.on_switch = lambda kind: asyncio.ensure_future(
+                    self.broadcast({"type": "audio_source", "source": kind}))
             try:
                 await source.start(queue)
+                if getattr(source, "system_error", None):
+                    await self.broadcast({"type": "error", "message": f"{source.system_error}。这次只用麦克风。"})
                 await self.broadcast({"type": "info", "message": f"Listening ({self.s.asr})"})
                 await self.asr.run(queue, self.on_transcript)
                 backoff = 1.0
@@ -766,6 +773,7 @@ def build_app(session: Session, window_api=None) -> web.Application:
         return web.FileResponse(path)
 
     app.router.add_get("/shots/{name}", shot)
+    app.router.add_static("/katex/", UI.parent / "katex")       # formula rendering, bundled (works offline)
     app.router.add_get("/", index)
     app.router.add_get("/ws", socket)
     return app

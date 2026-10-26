@@ -88,3 +88,38 @@ def check_screenshot(settings: Settings) -> int:
     else:
         subprocess.run(["open", str(path)], check=False)
     return status
+
+
+def check_audio(settings: Settings, seconds: float = 5) -> int:
+    """Record a few seconds from the computer's sound and the microphone and report what was heard."""
+    from .audio import MicSource, MixedSource, rms, system_audio_source
+
+    async def run():
+        heard = {"system": 0, "mic": 0, "silence": 0}
+        levels = {"system": [], "mic": []}
+        mic = MicSource(settings.sample_rate, settings.device)
+        system = system_audio_source(settings.sample_rate, settings.system_device)
+        mixed = MixedSource(mic, system, settings.sample_rate, settings.system_threshold, settings.mic_threshold)
+        choose = mixed.choose
+
+        def spy(m, s, now):
+            levels["mic"].append(rms(m))
+            levels["system"].append(rms(s))
+            chunk, source = choose(m, s, now)
+            heard[source] += 1
+            return chunk, source
+        mixed.choose = spy
+        out = asyncio.Queue()
+        await mixed.start(out)
+        print(f"Recording {seconds:.0f} s: play something on the computer, then say something into the microphone...")
+        await asyncio.sleep(seconds)
+        await mixed.stop()
+        if mixed.system_error or system is None:
+            print(f"Computer sound: NOT AVAILABLE ({mixed.system_error or 'not supported on this system'})")
+        else:
+            print(f"Computer sound: loudest {max(levels['system'], default=0):.4f} (threshold {settings.system_threshold})")
+        print(f"Microphone:     loudest {max(levels['mic'], default=0):.4f} (threshold {settings.mic_threshold})")
+        total = sum(heard.values()) or 1
+        print("Used: " + ", ".join(f"{k} {v * 100 // total}%" for k, v in heard.items()))
+        return 0 if (system is not None and not mixed.system_error) else 1
+    return asyncio.run(run())

@@ -10,7 +10,7 @@ import webbrowser
 
 from aiohttp import web
 
-from .audio import FileSource, MicSource, list_devices
+from .audio import FileSource, MicSource, MixedSource, list_devices, system_audio_source
 from .config import PROVIDERS, has_key, load_settings
 
 
@@ -39,6 +39,7 @@ def main(argv=None):
     p.add_argument("--demo", action="store_true", help="offline demo: scripted lecture, no keys or mic")
     p.add_argument("--check-keys", action="store_true", help="show which API keys are used and test them")
     p.add_argument("--check-screenshot", action="store_true", help="take a test screenshot, OCR it and open it")
+    p.add_argument("--check-audio", action="store_true", help="record 5 s of computer sound + microphone and report")
     p.add_argument("-v", "--verbose", action="store_true")
     a = p.parse_args(argv)
 
@@ -62,6 +63,9 @@ def main(argv=None):
     if a.check_screenshot:
         from .keycheck import check_screenshot
         raise SystemExit(check_screenshot(settings))
+    if a.check_audio:
+        from .keycheck import check_audio
+        raise SystemExit(check_audio(settings))
     if a.check_keys:
         from .keycheck import check_keys
         raise SystemExit(check_keys(settings))
@@ -83,7 +87,15 @@ def main(argv=None):
     def source():
         if a.file:
             return FileSource(a.file, settings.sample_rate)
-        return MicSource(settings.sample_rate, settings.device)
+        mic = MicSource(settings.sample_rate, settings.device)
+        if settings.audio_source == "mic":
+            return mic
+        system = system_audio_source(settings.sample_rate, settings.system_device)
+        if system is None:
+            return mic
+        # "system": never switch to the microphone; "auto": the microphone while the computer is silent
+        return MixedSource(mic, system, settings.sample_rate, settings.system_threshold,
+                           2.0 if settings.audio_source == "system" else settings.mic_threshold)
 
     ready = threading.Event()
     state = {}

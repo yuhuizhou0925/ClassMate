@@ -83,16 +83,21 @@ SHOT_ANSWER = (
 
 
 ENGINEER_ANSWER = (
-    "### 核心结论\n比值检验（ratio test）只保留“最近邻距离明显小于次近邻距离”的匹配，用一个相对阈值剔除模糊匹配。\n\n"
-    "### 原理与推导\n设描述子 d 的最近邻距离为 d1、次近邻为 d2，保留条件为 d1 / d2 < r（常取 0.7–0.8）。"
-    "正确匹配的 d1 远小于 d2；重复纹理会让 d1 ≈ d2，比值接近 1。\n\n"
-    "### 工程实现\n```python\nimport cv2\n\ndef ratio_match(desc1, desc2, ratio=0.75):\n"
-    "    matcher = cv2.BFMatcher(cv2.NORM_L2)\n    pairs = matcher.knnMatch(desc1, desc2, k=2)\n"
-    "    return [m for m, n in pairs if m.distance < ratio * n.distance]\n```\n\n"
-    "### 复杂度与性能\n暴力匹配 O(N·M·D)；描述子多时改用 FLANN（KD 树）近似最近邻。\n\n"
-    "### 边界情况与常见坑\n- 候选少于 2 个时 knnMatch 返回不足两项，需要先过滤\n- 二进制描述子（ORB）要用 NORM_HAMMING\n\n"
-    "### 测试与验证\n用已知单应性合成一对图像，统计内点率。\n\n"
-    "### 工程取舍与替代方案\n交叉验证（cross-check）更严格但更慢；学习型匹配器（SuperGlue）效果更好但需要 GPU。")
+    "### 核心结论\n用比值检验（ratio test）过滤 SIFT 匹配：只保留最近邻明显比次近邻更近的匹配。\n\n"
+    "### 工程方案\n1. 提取特征：`cv2.SIFT_create(nfeatures=4000)`，灰度图输入\n"
+    "2. 近邻搜索：FLANN KD 树，`trees=5`、`checks=50`，每个描述子取 k=2 个近邻\n"
+    "3. 比值检验：保留 $d_1 < 0.75\\, d_2$ 的匹配\n4. 去重：同一目标点只保留距离最小的一条\n"
+    "5. 几何校验：`cv2.findHomography(..., cv2.RANSAC, 3.0)`，只留内点\n\n"
+    "```python\nimport cv2\n\ndef match(img1, img2, ratio=0.75):\n    sift = cv2.SIFT_create(nfeatures=4000)        # 1\n"
+    "    k1, d1 = sift.detectAndCompute(img1, None)\n    k2, d2 = sift.detectAndCompute(img2, None)\n"
+    "    flann = cv2.FlannBasedMatcher({'algorithm': 1, 'trees': 5}, {'checks': 50})   # 2\n"
+    "    pairs = flann.knnMatch(d1, d2, k=2)\n"
+    "    return [m for m, n in pairs if m.distance < ratio * n.distance]   # 3\n```\n\n"
+    "### 方案解释\n1. SIFT 对尺度和旋转不变，4000 个点在速度和覆盖之间折中。\n"
+    "2. 精确最近邻是 $O(NMD)$，KD 树近似搜索快一个数量级。\n"
+    "3. 正确匹配满足 $$\\frac{d_1}{d_2} \\ll 1,$$ 重复纹理会让比值接近 1，0.75 是 Lowe 论文推荐值。\n"
+    "4. 多对一匹配会让单应性估计偏向重复区域。\n5. RANSAC 去掉比值检验漏掉的外点。\n\n"
+    "### 延伸\n- 为什么不用固定距离阈值？描述子距离尺度随图像变化，比值是相对量。")
 
 
 class DemoAnswerer:

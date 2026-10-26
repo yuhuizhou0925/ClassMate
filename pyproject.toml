@@ -13,6 +13,10 @@ dependencies = [
   "pywebview>=5", "pynput>=1.7", "Pillow>=10", "cryptography>=42",
   "pyobjc-framework-Vision>=10; sys_platform == 'darwin'",
   "pyobjc-framework-Quartz>=10; sys_platform == 'darwin'",
+  "pyobjc-framework-ScreenCaptureKit>=10; sys_platform == 'darwin'",
+  "pyobjc-framework-CoreMedia>=10; sys_platform == 'darwin'",
+  "pyobjc-framework-CoreAudio>=10; sys_platform == 'darwin'",
+  "soundcard>=0.4.3; sys_platform == 'win32'",
   "winrt-runtime>=2; sys_platform == 'win32'",
   "winrt-Windows.Media.Ocr>=2; sys_platform == 'win32'",
   "winrt-Windows.Graphics.Imaging>=2; sys_platform == 'win32'",
@@ -33,7 +37,7 @@ classmate = "classmate.__main__:main"
 packages = ["classmate", "classmate.asr"]
 
 [tool.setuptools.package-data]
-classmate = ["ui/*.html"]
+classmate = ["ui/*.html", "ui/katex/*", "ui/katex/fonts/*"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

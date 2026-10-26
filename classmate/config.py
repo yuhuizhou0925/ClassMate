@@ -120,7 +120,11 @@ class Settings:
     asr_model: str | None = None            # provider default if None
     language: str = "auto"                  # auto | en | zh | ...
     sample_rate: int = 16000
-    device: str | int | None = None         # input device name/index (None = system default)
+    device: str | int | None = None         # microphone name/index (None = system default)
+    audio_source: str = "auto"              # auto: the computer's sound first, the mic when it is silent | mic | system
+    system_device: str | None = None        # capture the computer's sound from this input device (BlackHole...)
+    system_threshold: float = 0.003         # loudness above which the computer's sound counts as playing
+    mic_threshold: float = 0.012            # loudness above which you count as speaking into the microphone
     keyterms: list[str] = field(default_factory=list)   # course vocabulary to bias recognition
     # answer generation
     llm: str = ""                           # anthropic | deepseek | doubao | qwen | openai; empty = first key present
@@ -266,7 +270,8 @@ def save_env_key(name: str, value: str) -> Path:
 # Choices made in the settings panel: they override config.yaml, and command-line flags override them.
 UI_SETTINGS = APP_DIR / "settings.yaml"
 UI_FIELDS = ("llm", "llm_model", "llm_deep_model", "llm_vision_model", "llm_base_url", "vision", "asr", "asr_model",
-             "language", "answer_style", "code_language", "capture_style", "keys", "opacity", "hide_from_capture")
+             "language", "answer_style", "code_language", "capture_style", "keys", "opacity", "hide_from_capture",
+             "audio_source")
 
 
 def read_ui_settings() -> dict:

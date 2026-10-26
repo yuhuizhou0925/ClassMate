@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Classmate</title>
+<link rel="stylesheet" href="/katex/katex.min.css">
+<script src="/katex/katex.min.js"></script>
 <style>
   :root {
     --bg: #f6f5f2; --panel: #ffffff; --ink: #1d1d1f; --muted: #6e6e73; --line: #e3e1dc;
@@ -90,6 +92,8 @@
   .a pre.code { font: 12.5px/1.5 var(--mono); background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
                 padding: 8px 10px; overflow-x: auto; white-space: pre; margin: 6px 0 8px; }
   .a p { margin: 0 0 4px; }
+  .a .katex-display { margin: 6px 0; overflow-x: auto; overflow-y: hidden; padding: 2px 0; }
+  .a .katex { font-size: 1.05em; }
   .a.wait { color: var(--muted); }
   .foot { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; color: var(--muted);
           font: 11.5px var(--mono); }
@@ -240,6 +244,13 @@
       共享屏幕、录屏和截图里看不到这个窗口，你自己的屏幕上照常显示</span></label>
     <div class="hint">只对原生窗口有效（浏览器模式无效）。少数会议软件可能不认这个设置，第一次用时请先确认一下。</div>
 
+    <h3>收音</h3>
+    <label class="row"><span>收音来源</span><select id="f_audio_source">
+      <option value="auto">电脑内置声音优先，没声音时用麦克风</option>
+      <option value="mic">只用麦克风</option>
+      <option value="system">只用电脑内置声音</option></select></label>
+    <div class="hint">电脑内置声音 = 电脑正在播放的声音（Zoom、腾讯会议、网课视频），比麦克风清楚得多。电脑里没声音、你在说话时自动切到麦克风；两边都安静时不送声音，免得把杂音识别成文字。Mac 需要“屏幕录制”权限（截图已经在用）。</div>
+
     <h3>提问方式</h3>
     <label class="row"><span>Ctrl 用法</span><select id="f_capture_style">
       <option value="toggle">按一下开始录音，再按一下立即回答</option>
@@ -268,7 +279,7 @@
 </div>
 <script>
 const $ = (id) => document.getElementById(id);
-let ws, st = {}, step = 40;
+let ws, st = {}, step = 40, audioSource = null;
 let keys = {screenshot: 'tab', region: 'shift+tab', capture: 'ctrl', append: '`', answer_now: 'space', cancel: 'escape', deep: 'd', copy: 'c', mode: 'm',
             list: 'l', transcript: 't', ask: '/', help: '?', prev: 'shift+up', next: 'shift+down', settings: /Mac/.test(navigator.platform) ? 'cmd+,' : 'alt+,',
             engineer: /Mac/.test(navigator.platform) ? 'cmd+x' : 'alt+x'};
@@ -322,10 +333,14 @@ let partialEl = null, capState = {text: '', hold: false, armed: false, pending: 
 
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function inline(t) {
-  return t.replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+  return t.replace(/\*\*(.+?)\*\*/g, '<b>$1</b>');
+}
+function tex(source, display) {    // LaTeX -> HTML with the bundled KaTeX; the source as text if it fails
+  try { return katex.renderToString(source, {displayMode: display, throwOnError: false, output: 'html'}); }
+  catch (e) { return esc(display ? `$$${source}$$` : `$${source}$`); }
 }
 function render(md) {
-  // small Markdown subset: headings, bullet / numbered lists, fenced code, inline code, bold
+  // small Markdown subset: headings, bullet / numbered lists, fenced code, inline code, bold, LaTeX formulas
   const parts = md.split(/```/);
   let html = '';
   parts.forEach((part, k) => {
@@ -334,21 +349,31 @@ function render(md) {
       html += `<pre class="code">${esc(body.replace(/\n$/, ''))}</pre>`;
       return;
     }
-    let list = '';
-    const close = () => { if (list) { html += `</${list}>`; list = ''; } };
+    // Inline code and formulas become placeholders first, so their $, * and < are left alone.
+    const kept = [];
+    const keep = (h) => `\u0000${kept.push(h) - 1}\u0000`;
+    part = part
+      .replace(/`([^`\n]+)`/g, (_, c) => keep(`<code>${esc(c)}</code>`))
+      .replace(/\$\$([\s\S]+?)\$\$/g, (_, f) => keep(tex(f.trim(), true)))
+      .replace(/\\\[([\s\S]+?)\\\]/g, (_, f) => keep(tex(f.trim(), true)))
+      .replace(/\\\(([\s\S]+?)\\\)/g, (_, f) => keep(tex(f.trim(), false)))
+      .replace(/\$(?![\s$])([^$\n]+?)(?<!\s)\$(?!\d)/g, (_, f) => keep(tex(f, false)));   // not "$5 and $10"
+    let block = '', list = '';
+    const close = () => { if (list) { block += `</${list}>`; list = ''; } };
     for (const raw of esc(part).split('\n')) {
       const l = raw.trim();
       let m;
-      if ((m = l.match(/^#{1,4}\s+(.*)/))) { close(); html += `<h4>${inline(m[1])}</h4>`; }
-      else if ((m = l.match(/^[-*•]\s+(.*)/))) { if (list !== 'ul') { close(); html += '<ul>'; list = 'ul'; } html += `<li>${inline(m[1])}</li>`; }
-      else if ((m = l.match(/^(\d+)[.)、]\s+(.*)/))) { if (list !== 'ol') { close(); html += `<ol start="${m[1]}">`; list = 'ol'; } html += `<li>${inline(m[2])}</li>`; }
-      else { close(); if (l) html += `<p>${inline(l)}</p>`; }
+      if ((m = l.match(/^#{1,4}\s+(.*)/))) { close(); block += `<h4>${inline(m[1])}</h4>`; }
+      else if ((m = l.match(/^[-*•]\s+(.*)/))) { if (list !== 'ul') { close(); block += '<ul>'; list = 'ul'; } block += `<li>${inline(m[1])}</li>`; }
+      else if ((m = l.match(/^(\d+)[.)、]\s+(.*)/))) { if (list !== 'ol') { close(); block += `<ol start="${m[1]}">`; list = 'ol'; } block += `<li>${inline(m[2])}</li>`; }
+      else { close(); if (l) block += `<p>${inline(l)}</p>`; }
     }
     close();
+    html += block.replace(/\u0000(\d+)\u0000/g, (_, n) => kept[+n]);
   });
   return html;
 }
-const plain = (md) => md.replace(/```[\s\S]*?```/g, ' ').replace(/\*\*|`|^#+\s*/gm, '').replace(/^[-*•]\s+/gm, '').replace(/题目 \/ Question:|题目：/g, '').replace(/\s+/g, ' ').trim();
+const plain = (md) => md.replace(/```[\s\S]*?```/g, ' ').replace(/\$\$?|\\[()\[\]]/g, '').replace(/\*\*|`|^#+\s*/gm, '').replace(/^[-*•]\s+/gm, '').replace(/题目 \/ Question:|题目：/g, '').replace(/\s+/g, ' ').trim();
 const clock = (t) => new Date(t * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit', second: '2-digit'});
 const send = (o) => { if (ws && ws.readyState === 1) ws.send(JSON.stringify(o)); };
 function showError(m) { const e = $('err'); e.textContent = m; e.hidden = false; clearTimeout(showError.t); showError.t = setTimeout(() => e.hidden = true, 8000); }
@@ -418,6 +443,8 @@ function drawCapture() {
   else if (capState.hold) label = capState.target ? `● 收录中 · 补充到 Q${n(capState.target)}` : `● 收录中 · 松开 ${key} 生成`;
   else if (capState.armed) label = capState.target ? `等这句说完 → 补充到 Q${n(capState.target)}` : '等这句说完 → 生成';
   else if (capState.pending) label = '排队：当前回答完成后作为下一题';
+  const SRC = {system: '电脑声音', mic: '麦克风', silence: '安静'};
+  if (capState.hold && audioSource) label += ` · 收音：${SRC[audioSource]}`;
   $('caplabel').textContent = label;
   $('captext').textContent = capState.text || capState.pending || '';
   const live = $('caplive');
@@ -465,6 +492,8 @@ function handle(m) {
       tr.insertBefore(line, partialEl); partialEl.textContent = ''; livePartial = '';
     }
     tr.scrollTop = tr.scrollHeight; drawCapture();
+  } else if (m.type === 'audio_source') {
+    audioSource = m.source; drawCapture();
   } else if (m.type === 'capture') {
     capState = m; drawCapture();
   } else if (m.type === 'question') {
@@ -566,7 +595,7 @@ $('opacity').onchange = (e) => { send({cmd: 'opacity', value: e.target.value / 1
 // ---------- settings panel ----------
 let cfg = null, draft = null, recording = null, saving = false, cfgDirty = false;
 const FIELDS = ['llm', 'llm_model', 'llm_deep_model', 'llm_vision_model', 'llm_base_url', 'vision', 'asr', 'language',
-                'answer_style', 'code_language', 'capture_style', 'hide_from_capture'];
+                'answer_style', 'code_language', 'capture_style', 'hide_from_capture', 'audio_source'];
 function setMsg(t, cls = '') { const e = $('setmsg'); e.textContent = t; e.className = cls; }
 function openSettings() { $('settings').hidden = false; cfgDirty = false; setMsg(''); send({cmd: 'get_config'}); if (cfg) fillSettings(); }
 function closeSettings() { $('settings').hidden = true; recording = null; }

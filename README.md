@@ -51,6 +51,8 @@ This is an open-source project: the code keeps out people who simply download an
 
 ## Features
 
+- **Computer sound first**: while the computer plays sound (the lecturer in Zoom / Teams, a lecture video), that sound is transcribed directly, which is much clearer than a microphone. When the computer is silent and you speak, the microphone is used; when both are quiet, nothing is sent, so room noise is not transcribed. No virtual audio device is needed: macOS uses ScreenCaptureKit (the Screen Recording permission screenshots already use; the menu bar shows the recording indicator while it listens), Windows uses WASAPI loopback. Choose "microphone only" or "computer sound only" under Settings > Audio. Run `python -m classmate --check-audio` to test both sources.
+- **Formulas**: LaTeX in answers (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`) is rendered with KaTeX, bundled with the app so it also works offline.
 - **Live transcription**: text being recognised is shown in grey italics and turns black with a timestamp once final.
 - **One-key questions**: tap Ctrl to start recording (the microphone turns on), and what you say appears live. Tap Ctrl again to get an answer immediately, including words still being recognised; the microphone turns off. The microphone is off the rest of the time.
 - **Append to a question**: tap the backtick key (`) to record more for the current question; tap it (or Ctrl) again and the extended question is answered again.
@@ -59,7 +61,7 @@ This is an open-source project: the code keeps out people who simply download an
 - **Preferred programming language**: choose one in the settings (Python, Java, C++, ... or type your own). Code written from scratch uses it; fixes to code given in the question keep that code's language.
 - **Answers stay in Chinese**: if a model starts answering in English anyway, the answer is discarded and regenerated in Chinese automatically.
 - **Deeper answer**: press D for a fuller explanation from a stronger model with reasoning enabled.
-- **Engineering-grade answer**: press Cmd+X (Alt+X on Windows) for an exhaustive answer to the current question in a new box below it: conclusion, theory and derivation, complete runnable code, complexity, edge cases and pitfalls, testing, trade-offs and follow-up questions. It takes a minute or two, the first words appear within a few seconds, and nothing is replaced: the short answer and earlier engineering-grade answers stay. It runs without reasoning by default so the whole token budget (`engineer_max_tokens`, 16000) goes into the answer; set `engineer_thinking: true` in `config.yaml` for more deliberate (but much slower) answers.
+- **Engineering-grade answer**: press Cmd+X (Alt+X on Windows) for an engineering answer to the current question in a new box below it. It leads with an actionable plan in numbered points (method, tool, key parameters) and complete runnable code, then explains the plan point by point (why, formulas, pitfalls, complexity, testing, alternatives). The first words appear within a few seconds, and nothing is replaced: the short answer and earlier engineering-grade answers stay. It runs without reasoning by default so the whole token budget (`engineer_max_tokens`, 16000) goes into the answer; set `engineer_thinking: true` in `config.yaml` for more deliberate (but much slower) answers.
 - **Course notes**: PDF, PPTX, DOCX, Markdown, TXT or whole folders. The notes are sent with prompt caching, so later answers are faster and cheaper.
 - **Follow-up questions**: the last 6 questions and answers are sent along, so follow-ups such as "how is that different from the previous one" make sense.
 - **Session log**: every lecture's transcript and answers are saved to `sessions/<date>_<time>.md`.
@@ -126,14 +128,14 @@ python -m classmate --list-devices              # list audio input devices
 python -m classmate --check-keys                # show which API keys are used and test them
 ```
 
-### Online lectures: transcribe Zoom / Teams audio directly
+### Online lectures: Zoom / Teams audio
 
-Recording your speakers with the microphone gives poor results. Route the system audio through the free virtual device BlackHole instead:
+ClassMate captures the computer's sound directly (see "Computer sound first" above), so this works without any setup. If you prefer a virtual audio device, set `system_device` in `config.yaml` (for example `BlackHole`, `Stereo Mix` or `CABLE Output`). Setting up BlackHole on macOS:
 
 1. `brew install blackhole-2ch`, or download it from existential.audio.
 2. Open **Audio MIDI Setup**, click "+" in the bottom-left corner and choose **Create Multi-Output Device**. Tick your headphones or speakers and BlackHole 2ch.
 3. In the Zoom or Teams audio settings, set the speaker to this multi-output device. You still hear everything.
-4. Run `python -m classmate --device BlackHole`.
+4. Set `system_device: BlackHole` in `config.yaml`.
 
 ## Models
 
@@ -184,12 +186,12 @@ ClassMate is meant to help you follow a lecture, understand questions and organi
 
 ```bash
 pip install -e ".[dev]"
-pytest -q          # 88 tests
+pytest -q          # 92 tests
 ```
 
 | File | Purpose |
 |---|---|
-| `classmate/audio.py` | Microphone / BlackHole capture, WAV replay |
+| `classmate/audio.py` | Microphone, computer sound (ScreenCaptureKit / WASAPI loopback), the mixed source, WAV replay |
 | `classmate/asr/` | AssemblyAI, ElevenLabs and Deepgram streaming recognition behind one event interface |
 | `classmate/questions.py` | Local question detection (English and Chinese) |
 | `classmate/config.py` | Settings (`config.yaml`, then `settings.yaml` from the settings panel, then command-line flags), provider defaults (`PROVIDERS`), shortcut validation |
@@ -205,6 +207,10 @@ pytest -q          # 88 tests
 ## Troubleshooting
 
 - **The app quit when switching input methods with Caps Lock**: fixed. The global key library pynput handled the system event sent by Caps Lock on a background thread, which recent macOS versions do not allow. Those events (media keys only, which ClassMate does not use) are no longer listened to.
+
+## Third-party code
+
+`classmate/ui/katex/` contains KaTeX 0.16.11 (MIT license, see `classmate/ui/katex/LICENSE`).
 
 ## License
 

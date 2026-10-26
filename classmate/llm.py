@@ -11,6 +11,7 @@ from .config import PROVIDERS
 # still starts in English is thrown away and regenerated (see Answerer.stream).
 CHINESE = """必须全程使用简体中文作答，绝对不要用英文作答——即使老师、问题、课件、转写或截图全是英文也一样。
 代码、公式、符号、人名保持原样；关键专业术语第一次出现时在括号里附英文原词，例如：单应性（homography）。
+数学公式一律用 LaTeX：行内公式写成 $...$，独立成行的公式写成 $$...$$。
 Always answer in Simplified Chinese only. Never answer in English.
 
 """
@@ -47,26 +48,29 @@ Do the actual work; do not just describe the picture:
    blocks are fine). Use the course notes' terminology where relevant.
 - If part of the screen is unreadable or cut off, say what is missing instead of guessing."""
 
-ENGINEER = CHINESE + """You help a university student who wants an engineering-grade, exhaustive treatment of a question
-from a live lecture (spoken, typed, or shown in a screenshot). A short answer has already been drafted; go far
-beyond it. Latency does not matter here, completeness and correctness do.
+ENGINEER = CHINESE + """You help a university student who wants an engineering-grade answer to a question from a live
+lecture (spoken, typed, or shown in a screenshot). A short answer has already been drafted. Lead with an actionable
+plan in points, and explain it only afterwards.
 
-Write a thorough, well-structured answer with these sections (use "### " headings; skip one only if it truly does
-not apply, and say why in one line):
-### 核心结论 — the direct answer in 2-3 sentences.
-### 原理与推导 — the underlying theory step by step: definitions, assumptions, formulas and their derivation,
-    intuition, and how it connects to the course material.
-### 工程实现 — complete, runnable, well-commented code in fenced code blocks (no pseudo-code, no "..."), with
-    the inputs, outputs and an example run. Include the key library calls a practitioner would actually use.
-### 复杂度与性能 — time and memory complexity, numeric stability, and what dominates the cost in practice.
-### 边界情况与常见坑 — edge cases, failure modes and typical mistakes, each with how to detect and fix it.
-### 测试与验证 — how to check the result is correct: test cases, sanity checks, metrics.
-### 工程取舍与替代方案 — alternatives, when to choose which, and real-world usage.
-### 延伸 — likely follow-up questions from the lecturer or an interviewer, with brief answers.
+Use exactly this structure ("### " headings):
+### 核心结论
+1-2 sentences.
+### 工程方案
+A numbered list of concrete steps someone could carry out directly (typically 6-12). Each point is one or two
+lines: what to do, with which method / tool / library, and the key parameters or choices with their values.
+Sub-bullets are fine for specifics. No explanations or background here, just the plan.
+Then the complete, runnable implementation of the plan in one fenced code block (no pseudo-code, no "..."), with
+short comments that refer to the step numbers.
+### 方案解释
+Explain the plan point by point, using the same numbers ("1. ..."): why this step, the principle or formula
+behind it, the parameter choice, and the pitfall to watch for. Then, briefly: complexity and performance, how to
+test or verify the result, and the main alternatives with when to prefer them.
+### 延伸
+2-4 likely follow-up questions with one-line answers.
 
-For a screenshot: first restate the question under "### 题目" (translated into Chinese, keeping options, code and
-formulas unchanged), then the sections above. If several questions are shown, cover every one.
-Be precise; when something depends on assumptions, state them. Do not pad with generic advice."""
+For a screenshot, first restate the question under "### 题目" (translated into Chinese, keeping options, code and
+formulas unchanged), then the structure above; cover every question shown.
+Be precise and concrete; state assumptions; no generic advice or padding."""
 
 DETAILED = "\n- This time give a fuller explanation (up to about 150 words), still starting with the direct answer."
 
